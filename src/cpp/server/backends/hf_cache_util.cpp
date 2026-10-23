@@ -34,6 +34,19 @@ fs::directory_options dir_options() {
 #endif
 }
 
+bool is_backend_private_path(const fs::path& model_cache_path, const fs::path& path) {
+    const auto relative = path.lexically_normal().lexically_relative(model_cache_path.lexically_normal());
+    return !relative.empty() && *relative.begin() == "strata";
+}
+
+bool is_backend_private_cache_only(const fs::path& model_cache_path) {
+    if (!hf_cache::exists(model_cache_path / "strata")) return false;
+    for (const auto& entry : fs::directory_iterator(model_cache_path, dir_options())) {
+        if (!is_backend_private_path(model_cache_path, entry.path())) return false;
+    }
+    return true;
+}
+
 namespace {
 std::string read_ref_main(const fs::path& model_cache_path) {
     std::ifstream refs_file(model_cache_path / "refs" / "main");

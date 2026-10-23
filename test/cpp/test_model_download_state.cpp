@@ -1,3 +1,6 @@
+#include "lemon/backends/backend_ops.h"
+#include "lemon/backends/hf_cache_util.h"
+#include "lemon/backends/llamacpp/llamacpp_gguf.h"
 #include "lemon/model_manager.h"
 #include "lemon/utils/path_utils.h"
 #include "support/test_state_isolation.h"
@@ -31,6 +34,7 @@ struct RegistryFixtures {
     fs::path hf_variant_snapshot;
     fs::path hf_uncommitted_repo;
     fs::path hf_uncommitted_snapshot;
+    fs::path hf_strata_repo;
     fs::path collection_main;
     fs::path collection_vae;
 };
@@ -51,6 +55,9 @@ static RegistryFixtures create_registry_fixtures(const fs::path& root,
     write_file(
         fixtures.hf_uncommitted_snapshot / "model-00002-of-00004.safetensors.partial",
         "partial");
+    fixtures.hf_strata_repo = hf_root / "models--org--strata-shared";
+    write_file(fixtures.hf_strata_repo / "strata" / "UD-Q4_K_XL" / "model.gguf", "GGUF");
+    write_file(fixtures.hf_strata_repo / "strata" / "vision" / "main" / "mmproj.gguf", "GGUF");
 
     fs::path collection_dir = root / "collection";
     fixtures.collection_main = collection_dir / "main.bin";
@@ -62,6 +69,9 @@ static RegistryFixtures create_registry_fixtures(const fs::path& root,
          json{{"checkpoint", "org/variant:model.gguf"}, {"recipe", "llamacpp"}}},
         {"hf-uncommitted",
          json{{"checkpoint", "org/uncommitted"}, {"recipe", "sd-cpp"}}},
+        {"hf-strata-alias",
+         json{{"checkpoint", "org/strata-shared:model.gguf"},
+              {"mmproj", "mmproj.gguf"}, {"recipe", "llamacpp"}}},
         {"comp-multi",
          json{{"checkpoints",
                json{{"main", path_to_utf8(fixtures.collection_main)},
@@ -119,6 +129,68 @@ static void test_required_checkpoint_completeness(ModelManager& manager,
     fs::remove(manifest);
     check("multi-checkpoint: removing manifest restores completeness",
           manager.checkpoints_complete(info));
+}
+
+static void test_backend_private_cache_resolution(ModelManager& manager,
+                                                 const RegistryFixtures& fixtures) {
+    using namespace lemon::backends;
+    const auto& repo = fixtures.hf_strata_repo;
+    const auto resolve_main = [&] {
+        return llamacpp::resolve_gguf_path(path_to_utf8(repo), "model.gguf");
+    };
+    CheckpointResolveContext context;
+    context.hf_cache = path_to_utf8(repo.parent_path());
+    context.repo_id = "org/strata-shared";
+    context.main_repo_id = context.repo_id;
+    context.model_cache_path = path_to_utf8(repo);
+    context.variant = "mmproj.gguf";
+    context.type = "mmproj";
+    ModelInfo info;
+    const auto resolve_aux = [&] {
+        return default_backend_ops()->resolve_checkpoint_path(info, context);
+    };
+
+    check("Strata-only cache does not mark its llama.cpp alias downloaded",
+          !manager.get_model_info("user.hf-strata-alias").downloaded);
+    check("Strata GGUF is excluded from whole-repository checkpoint lookup", resolve_main().empty());
+    check("Strata projector is excluded from auxiliary checkpoint lookup", resolve_aux().empty());
+    context.variant.clear();
+    check("Strata-only cache root is not a generic directory checkpoint", resolve_aux().empty());
+    context.variant = "mmproj.gguf";
+    context.repo_id = "org/projector";
+    context.model_cache_path = path_to_utf8(repo.parent_path() / "models--org--projector");
+    check("Legacy auxiliary fallback does not claim another backend's private files", resolve_aux().empty());
+    context.repo_id = context.main_repo_id;
+    context.model_cache_path = path_to_utf8(repo);
+    write_file(repo / "README.md", "Repository metadata");
+    check("Repository metadata beside Strata files does not imply a downloaded GGUF", resolve_main().empty());
+
+    const auto snapshot = repo / "snapshots" / "registered";
+    write_file(snapshot / "model.gguf", "GGUF");
+    write_file(snapshot / "mmproj.gguf", "GGUF");
+    write_file(repo / "refs" / "main", "registered");
+    manager.invalidate_models_cache();
+    check("Independent llama.cpp download still marks its entry downloaded",
+          manager.get_model_info("user.hf-strata-alias").downloaded);
+    check("Active registry GGUF is preferred over Strata's copy",
+          resolve_main() == path_to_utf8(snapshot / "model.gguf"));
+    check("Active registry projector is preferred over Strata's copy",
+          resolve_aux() == path_to_utf8(snapshot / "mmproj.gguf"));
+    write_file(snapshot / "strata" / "other.gguf", "GGUF");
+    check("A genuine repository folder named strata is not backend-private",
+          !hf_cache::is_backend_private_path(repo, snapshot / "strata" / "other.gguf"));
+    check("Registry GGUFs nested under a genuine strata folder remain resolvable",
+          llamacpp::resolve_gguf_path(path_to_utf8(repo), "other.gguf") ==
+              path_to_utf8(snapshot / "strata" / "other.gguf"));
+    const auto legacy = repo.parent_path() / "models--org--legacy-with-strata";
+    write_file(legacy / "strata" / "private.gguf", "GGUF");
+    write_file(legacy / "model.gguf", "GGUF");
+    check("Flat legacy registry models remain resolvable beside private caches",
+          llamacpp::resolve_gguf_path(path_to_utf8(legacy), "model.gguf") ==
+              path_to_utf8(legacy / "model.gguf"));
+    check("Private model files are preserved",
+          fs::is_regular_file(repo / "strata" / "UD-Q4_K_XL" / "model.gguf") &&
+          fs::is_regular_file(repo / "strata" / "vision" / "main" / "mmproj.gguf"));
 }
 
 static void test_single_checkpoint_partial_guard(ModelManager& manager,
@@ -218,6 +290,7 @@ int main() {
         ModelManager manager;
         test_required_checkpoint_completeness(manager, temp);
         test_single_checkpoint_partial_guard(manager, temp);
+        test_backend_private_cache_resolution(manager, fixtures);
         test_hf_manifest_marks_variant_incomplete(manager, fixtures);
         test_variantless_snapshot_commit_state(manager, fixtures);
         test_collection_component_download_state(manager, fixtures);

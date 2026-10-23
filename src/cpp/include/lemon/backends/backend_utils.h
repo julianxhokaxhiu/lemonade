@@ -33,14 +33,15 @@ namespace lemon::backends {
         // when this is set, so non-split backends incur no extra HTTP
         // requests and no spurious 404 lines in install logs.
         const bool supports_split_archive;
+        const bool require_asset_digest;
 
         using InstallParamsFn = InstallParams(*)(const std::string& backend, const std::string& version);
         InstallParamsFn install_params_fn;  // nullptr for backends with no auto-install
 
         BackendSpec(std::string r, std::string b, InstallParamsFn fn = nullptr,
-                    bool split = false)
+                    bool split = false, bool require_digest = false)
             : recipe(std::move(r)), binary(std::move(b)),
-              supports_split_archive(split), install_params_fn(fn) {}
+              supports_split_archive(split), require_asset_digest(require_digest), install_params_fn(fn) {}
 
         std::string log_name() const { return recipe + " Server"; };
     };

@@ -1,6 +1,8 @@
 #pragma once
 
+#include <cstdint>
 #include <optional>
+#include <stdexcept>
 #include <string>
 #include <vector>
 #include "lemon/model_manager.h"  // ModelInfo, DownloadProgressCallback
@@ -10,6 +12,11 @@ namespace lemon {
 class CloudProviderRegistry;
 
 namespace backends {
+
+class InstallPreparationError : public std::runtime_error {
+public:
+    using std::runtime_error::runtime_error;
+};
 
 // Context handed to BackendOps methods: the server state model management needs
 // without a running subprocess.
@@ -54,6 +61,20 @@ public:
     virtual void resolve_runtime_options(const ModelInfo& info, RecipeOptions& options) const {
         (void)info;
         (void)options;
+    }
+
+    virtual std::string model_support_error(const ModelInfo&, const nlohmann::json&) const { return ""; }
+
+    virtual std::optional<int64_t> auto_context_size(const ModelInfo&, const RecipeOptions&) const {
+        return std::nullopt;
+    }
+
+    virtual double streaming_memory_pool_gb(const ModelInfo& info, double system_ram_gb,
+                                            double device_pool_gb, double dedicated_vram_gb) const {
+        (void)info;
+        (void)system_ram_gb;
+        (void)dedicated_vram_gb;
+        return device_pool_gb;
     }
 
     // Resolve a checkpoint to its absolute on-disk path (file or directory).
@@ -116,6 +137,8 @@ public:
     // model. Default: false.
     virtual bool invalidates_cache_after_download() const { return false; }
 
+    virtual bool delete_model(const ModelInfo&, const BackendOpsContext&) const { return false; }
+
     // Resolve a backend's installed version for a given backend variant. The
     // caller passes the version read from the on-disk version.txt (or "" if
     // absent); the default returns it unchanged.
@@ -160,6 +183,8 @@ public:
         (void)default_install_command;
         return std::nullopt;
     }
+
+    virtual void prepare_install(const std::string&, const std::string&, DownloadProgressCallback) const {}
 };
 
 // Shared default ops instance for backends that override nothing.

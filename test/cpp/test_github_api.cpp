@@ -133,6 +133,55 @@ int main() {
     else
         set_env("GH_TOKEN", orig_gh.c_str());
 
+    using nlohmann::json;
+    using lemon::utils::github_api::select_release_asset;
+    const std::string pattern = "strata-engine-*-windows-x86_64-cuda-cuda12.tar.gz";
+    const std::string digest = "sha256:" + std::string(64, 'a');
+    const json published = {{"name", "strata-engine-9.8.7-windows-x86_64-cuda-cuda12.tar.gz"}, {"digest", digest}};
+    const json release = {{"assets", json::array({
+        {{"name", "strata-app-windows.zip"}},
+        published,
+        {{"name", "strata-engine-9.8.7-windows-x86_64-cuda-cuda13.tar.gz"}, {"digest", digest}}
+    })}};
+    const auto selected = select_release_asset(release, pattern, true);
+    if (selected.name == published.at("name") && selected.digest == digest) {
+        result.ok("discover exact GPU asset and SHA-256 without an engine version pin");
+    } else {
+        result.fail("discover exact GPU asset and SHA-256 without an engine version pin");
+    }
+    const auto rejects = [&](const std::string& name, const json& input, const std::string& glob = "") {
+        try {
+            select_release_asset(input, glob.empty() ? pattern : glob, true);
+            result.fail(name);
+        } catch (const std::runtime_error&) {
+            result.ok(name);
+        }
+    };
+    rejects("missing asset list", json::object());
+    rejects("malformed asset list", {{"assets", "invalid"}});
+    rejects("no matching GPU asset", {{"assets", json::array()}});
+    auto ambiguous = release;
+    ambiguous["assets"].push_back({{"name", "strata-engine-9.8.8-windows-x86_64-cuda-cuda12.tar.gz"}, {"digest", digest}});
+    rejects("ambiguous engine versions", ambiguous);
+    for (const auto& bad_digest : {json(nullptr), json(123), json("sha1:" + std::string(40, 'a')),
+                                  json("sha256:abc"), json("sha256:" + std::string(64, 'z'))}) {
+        auto bad = published;
+        bad["digest"] = bad_digest;
+        rejects("missing or invalid SHA-256 never permits an unverified download",
+            {{"assets", json::array({bad})}});
+    }
+    auto missing_digest = published;
+    missing_digest.erase("digest");
+    rejects("absent SHA-256 is explicit", {{"assets", json::array({missing_digest})}});
+    rejects("unsafe asset filename", {{"assets", json::array({{{"name", "../engine.tar.gz"}, {"digest", digest}}})}}, "*");
+    rejects("asset pattern is a glob, not a regex", release, "strata-engine-.*.tar.gz");
+    const json unverified = {{"assets", json::array({{{"name", "engine-1.tar.gz"}}, {{"name", "engine-2.tar.gz"}}})}};
+    if (select_release_asset(unverified, "engine-*.tar.gz").name == "engine-1.tar.gz") {
+        result.ok("existing backends retain first-match discovery without mandatory digests");
+    } else {
+        result.fail("existing backends retain first-match discovery without mandatory digests");
+    }
+
     printf("\n%d passed, %d failed\n", result.passed, result.failed);
     return result.failed > 0 ? 1 : 0;
 }

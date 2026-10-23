@@ -18,6 +18,11 @@ bool exists(const std::filesystem::path& p);
 // of throwing.
 std::filesystem::directory_options dir_options();
 
+// Backend-owned caches must not satisfy another backend's registry checkpoints.
+bool is_backend_private_path(const std::filesystem::path& model_cache_path,
+                             const std::filesystem::path& path);
+bool is_backend_private_cache_only(const std::filesystem::path& model_cache_path);
+
 // The active registry snapshot directory (snapshots/<refs/main>) for a model cache
 // dir, or an empty path if there is no recorded ref / it doesn't exist.
 std::filesystem::path active_snapshot_path(const std::filesystem::path& model_cache_path);

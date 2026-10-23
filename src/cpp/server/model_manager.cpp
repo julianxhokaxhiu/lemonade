@@ -4379,6 +4379,7 @@ std::map<std::string, ModelInfo> ModelManager::filter_models_by_backend(
                          hardware["amd_npu"].value("available", false);
 
     double largest_mem_pool_gb = 0.0;
+    double largest_dedicated_vram_gb = 0.0;
     double curr_mem_pool_gb = 0.0;
 
     for (const auto& [dev_type, devices] : hardware.items()) {
@@ -4388,6 +4389,13 @@ std::map<std::string, ModelInfo> ModelManager::filter_models_by_backend(
         for (const auto& dev : dev_list) {
             if (!dev.is_object())
                 continue;
+
+            if ((dev_type == "amd_gpu" || dev_type == "nvidia_gpu") &&
+                dev.value("available", false) &&
+                !dev.value("integrated", dev_type != "nvidia_gpu")) {
+                largest_dedicated_vram_gb = std::max(
+                    largest_dedicated_vram_gb, dev.value("vram_gb", 0.0));
+            }
 
             // Behavior is chosen per device, not per device-type: AMD APUs are
             // reported under "amd_gpu" with "integrated": true and their GTT
@@ -4492,6 +4500,13 @@ std::map<std::string, ModelInfo> ModelManager::filter_models_by_backend(
         }
 
         if (!filter_out) {
+            if (const auto* ops = backends::ops_for(recipe)) {
+                filter_reason = ops->model_support_error(info, system_info);
+                filter_out = !filter_reason.empty();
+            }
+        }
+
+        if (!filter_out) {
             filter_reason = SystemInfo::check_guest_backend_installed(recipe, system_info);
             filter_out = !filter_reason.empty();
         }
@@ -4500,20 +4515,21 @@ std::map<std::string, ModelInfo> ModelManager::filter_models_by_backend(
         if (!filter_out && !user_controlled_model && info.size > 0.0) {
             const auto* desc = backends::descriptor_for(recipe);
             if (desc && desc->streams_model_from_storage) {
-                // A streaming backend reads the model from disk on demand, so the
-                // full model need not fit in memory — only its resident working
-                // set, and only in the device's own pool. ROCm cannot address
-                // system RAM plus the iGPU carveout as one pool; it gets the
-                // larger of the pools (largest_mem_pool_gb), so that is the ceiling.
+                // Device-bound backends cannot combine GPU and host allocations.
+                // CPU-offloading backends supply their own resident-memory budget.
                 const double working_set = streaming_working_set_gb(info.min_resident_gb, info.size);
-                if (streaming_model_exceeds_pool(working_set, largest_mem_pool_gb)) {
+                const auto* ops = backends::ops_for(recipe);
+                const double memory_pool = ops
+                    ? ops->streaming_memory_pool_gb(info, system_ram_gb, largest_mem_pool_gb, largest_dedicated_vram_gb)
+                    : largest_mem_pool_gb;
+                if (streaming_model_exceeds_pool(working_set, memory_pool)) {
                     filter_out = true;
                     size_filtered_recipes.insert(recipe);
                     std::ostringstream oss;
                     oss << std::fixed << std::setprecision(1);
                     oss << "This model streams from disk but needs about " << working_set
-                        << " GB resident in GPU memory, and this device's largest memory "
-                        << "pool is only " << largest_mem_pool_gb << " GB.";
+                        << " GB resident in memory, and this backend's usable memory "
+                        << "pool is only " << memory_pool << " GB.";
                     filter_reason = oss.str();
                 }
             } else if (system_ram_gb > 0.0 && info.size > max_model_size_gb) {
@@ -6747,9 +6763,12 @@ void ModelManager::delete_model(const std::string& model_name) {
                                  "External files are user-managed; remove them manually.");
     }
 
-    // FLM models have no local HF cache; deletion is the backend's `flm remove`.
-    if (info.recipe == "flm") {
-        backends::fastflowlm::flm_remove(info.checkpoint());
+    const bool backend_deleted = backends::ops_for(info.recipe)->delete_model(
+        info, backends::BackendOpsContext{this});
+    if (info.recipe == "flm" || backend_deleted) {
+        if (info.recipe == "flm") {
+            backends::fastflowlm::flm_remove(info.checkpoint());
+        }
 
         // Remove from user models if it's a user model
         if (is_user_model_name(canonical_model_name)) {
