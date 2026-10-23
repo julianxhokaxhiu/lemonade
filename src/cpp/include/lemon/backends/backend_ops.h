@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstdint>
 #include <optional>
 #include <string>
 #include <vector>
@@ -54,6 +55,20 @@ public:
     virtual void resolve_runtime_options(const ModelInfo& info, RecipeOptions& options) const {
         (void)info;
         (void)options;
+    }
+
+    virtual std::string model_support_error(const ModelInfo&, const nlohmann::json&) const { return ""; }
+
+    virtual std::optional<int64_t> auto_context_size(const ModelInfo&, const RecipeOptions&) const {
+        return std::nullopt;
+    }
+
+    virtual double streaming_memory_pool_gb(const ModelInfo& info, double system_ram_gb,
+                                            double device_pool_gb, double dedicated_vram_gb) const {
+        (void)info;
+        (void)system_ram_gb;
+        (void)dedicated_vram_gb;
+        return device_pool_gb;
     }
 
     // Resolve a checkpoint to its absolute on-disk path (file or directory).
@@ -115,6 +130,8 @@ public:
     // Whether the model cache must be rebuilt after this backend downloads a
     // model. Default: false.
     virtual bool invalidates_cache_after_download() const { return false; }
+
+    virtual bool delete_model(const ModelInfo&, const BackendOpsContext&) const { return false; }
 
     // Resolve a backend's installed version for a given backend variant. The
     // caller passes the version read from the on-disk version.txt (or "" if

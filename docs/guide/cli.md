@@ -416,6 +416,19 @@ The following options are available depending on the recipe being used:
 | `--ctx-size SIZE` | Context size for the model | auto |
 | `--flm-args ARGS` | Safe flm serve tuning args: --pmode, --prefill-chunk-len, --img-pre-resize, --socket, --q-len, --preemption | `""` |
 
+#### Strata (`strata` recipe)
+
+| Option | Description | Default |
+|--------|-------------|---------|
+| `--ctx-size SIZE` | Context size for the model | auto |
+| `--strata BACKEND` | Strata backend: auto, cuda, cuda13, rocm, metal | `auto` |
+| `--strata-args ARGS` | Additional Strata engine arguments | `""` |
+| `--strata-mtp BOOL` | Enable the external Flash-Next MTP draft head on CUDA/ROCm | `true` |
+| `--strata-vision MODE` | Native picture reader: cpu, gpu (if packaged), off | `cpu` |
+| `--strata-kv FORMAT` | Flash-Next KV cache: auto (Strata recommendations), fp16, int8, q4_0, k8v4 | `auto` |
+| `--strata-experts MODE` | Flash-Next CPU experts: auto (native arena), mmap, resident | `auto` |
+| `--strata-kv-streaming MODE` | Flash-Next RAM-backed KV streaming: auto (Strata recommendations), on, off | `auto` |
+
 #### Ryzen AI LLM (`ryzenai-llm` recipe)
 
 | Option | Description | Default |

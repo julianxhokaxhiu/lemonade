@@ -1,5 +1,6 @@
 #pragma once
 
+#include <functional>
 #include <string>
 #include <utility>
 #include <vector>
@@ -16,6 +17,7 @@ struct ServerCommand {
     // Polled until it answers before the load completes, then polled by the
     // backend watchdog for as long as the server runs.
     std::string ready_endpoint = "/health";
+    std::function<bool()> should_cancel;
 };
 
 struct ProcessOutput {
@@ -32,8 +34,9 @@ public:
     ServerProcess(const ServerProcess&) = delete;
     ServerProcess& operator=(const ServerProcess&) = delete;
 
-    // Starts the server and returns the host that serves `command.port`.
+    // HTTP processes return the host serving command.port; pipe transports return no host.
     virtual std::string start(const ServerCommand& command) = 0;
+    virtual bool uses_http() const { return true; }
     // Terminates the server, or reaps it and logs its exit code when it has
     // already exited. Does nothing when it never started.
     virtual void stop();

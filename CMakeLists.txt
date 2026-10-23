@@ -205,6 +205,7 @@ set(LEMON_BACKENDS
     "kokoro|kokoro"
     "sd-cpp|sdcpp"
     "flm|fastflowlm"
+    "strata|strata"
     "ryzenai-llm|ryzenai"
     "vllm|vllm"
     "thenoise|thenoise"
@@ -1212,6 +1213,7 @@ target_link_libraries(lemonade-server-core PUBLIC
     nlohmann_json::nlohmann_json
     lemonade-httplib
 )
+include(cmake/StrataNative.cmake)
 
 if(USE_SYSTEM_CLI11)
     target_include_directories(lemonade-server-core PUBLIC ${CLI11_INCLUDE_DIRS})
@@ -1378,6 +1380,7 @@ target_link_libraries(${EXECUTABLE_NAME} PRIVATE lemonade-server-core)
 #   - static/index.html, static/favicon.ico (web UI)
 #   - server_models.json (model registry)
 #   - backend_versions.json (backend version configuration)
+#   - strata.json (Strata model and adapter metadata)
 #   - defaults.json (default config values)
 #   - bench_scenarios.json (benchmark scenarios)
 #   - docs/api/ (bundled API reference, served at <prefix>/docs)
@@ -2294,6 +2297,9 @@ add_custom_target(embeddable
         "$<TARGET_FILE_DIR:lemond>/resources/backend_versions.json"
         "${EMBEDDABLE_STAGING_DIR}/resources/"
     COMMAND ${CMAKE_COMMAND} -E copy
+        "$<TARGET_FILE_DIR:lemond>/resources/strata.json"
+        "${EMBEDDABLE_STAGING_DIR}/resources/"
+    COMMAND ${CMAKE_COMMAND} -E copy
         "$<TARGET_FILE_DIR:lemond>/resources/vllm_model_config.json"
         "${EMBEDDABLE_STAGING_DIR}/resources/"
     COMMAND ${CMAKE_COMMAND} -E copy
@@ -2304,6 +2310,9 @@ add_custom_target(embeddable
         "${EMBEDDABLE_STAGING_DIR}/resources/"
     COMMAND ${CMAKE_COMMAND} -E copy
         "$<TARGET_FILE_DIR:lemond>/resources/toolDefinitions.json"
+        "${EMBEDDABLE_STAGING_DIR}/resources/"
+    COMMAND ${CMAKE_COMMAND} -E copy
+        "${CMAKE_BINARY_DIR}/resources/strata-native-licenses.txt"
         "${EMBEDDABLE_STAGING_DIR}/resources/"
 
     # Create archive
@@ -2320,6 +2329,24 @@ message(STATUS "  Archive: ${EMBEDDABLE_ARCHIVE_NAME}")
 # ============================================================
 # C++ Unit Tests
 # ============================================================
+
+set(_STRATA_TEST_SRC
+    "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_strata.cpp"
+)
+if(BUILD_TESTING AND EXISTS "${_STRATA_TEST_SRC}")
+    add_executable(test_strata test/cpp/test_strata.cpp)
+    target_link_libraries(test_strata PRIVATE lemonade-server-core llama llama-common)
+    add_dependencies(test_strata copy_resources)
+    add_custom_command(TARGET test_strata POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E make_directory "$<TARGET_FILE_DIR:test_strata>/resources"
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            "${CMAKE_BINARY_DIR}/resources/backend_versions.json"
+            "${CMAKE_BINARY_DIR}/resources/strata.json"
+            "${CMAKE_BINARY_DIR}/resources/server_models.json"
+            "$<TARGET_FILE_DIR:test_strata>/resources"
+    )
+    add_cpp_ci_test(StrataTest CI ON COMMAND test_strata)
+endif()
 
 set(_ARCHIVE_PLATFORM_TEST_SRC
     "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_archive_platform.cpp"
