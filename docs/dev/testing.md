@@ -23,6 +23,8 @@ New endpoints, commands, and backends need at least one test that exercises them
 
 A committed test file that no workflow runs is an incomplete contribution. New Python suites must be added to a CI job; new C++ tests must be declared with `add_cpp_ci_test(<Name> CI ON COMMAND <target>)` in `CMakeLists.txt` so the `cpp-ci` CTest label picks them up. Guard the block with `if(BUILD_TESTING AND ...)` — distro packaging configures with `BUILD_TESTING=OFF` to avoid building test binaries it discards, and an unguarded declaration fails that build at configure time.
 
+Each source-backed C++ test block must also check `EXISTS` for its own test source. Docker builds omit the `test/` tree while `BUILD_TESTING` can remain `ON`; absent test sources must not declare targets or bypass the test-state isolation checks.
+
 Most suites join the existing endpoint/CLI or hardware-matrix jobs in `cpp_server_build_test_release.yml`. A dedicated workflow is appropriate only when the suite has environment needs the existing jobs can't meet (real network downloads, a container, path-filtered smoke tests).
 
 ### A test must be able to fail

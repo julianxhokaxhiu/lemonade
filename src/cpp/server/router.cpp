@@ -1364,6 +1364,17 @@ std::string Router::get_sole_loaded_model_of_type(ModelType type) const {
     return match ? model_manager_->get_public_model_name(match->get_model_name()) : "";
 }
 
+void Router::with_backend_maintenance(const std::string& recipe, const std::function<void()>& operation) {
+    std::lock_guard<std::mutex> lock(load_mutex_);
+    if (is_loading_) throw std::invalid_argument("A model is loading; retry the engine upload when it finishes");
+    for (const auto& server : loaded_servers_) {
+        if (server->get_recipe_options().get_recipe() == recipe) {
+            throw std::invalid_argument("Unload this recipe's models before replacing its engine");
+        }
+    }
+    operation();
+}
+
 json Router::get_all_loaded_models() const {
     std::lock_guard<std::mutex> lock(load_mutex_);
 

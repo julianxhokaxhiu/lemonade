@@ -1306,7 +1306,8 @@ def docs_problems(spec: dict, entries: dict) -> list[str]:
         schema = dereferenced(response["schema"])
         examples = [e for e in spec["examples"] if e["format"] == fmt]
         if not examples:
-            problems.append(f"{where}: no example")
+            if not schema.get("x-no-example"):
+                problems.append(f"{where}: no example")
             continue
         payloads = []
         for example in examples:

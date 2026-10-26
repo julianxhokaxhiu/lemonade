@@ -2,8 +2,10 @@
 
 #include "lemon/backend_manager.h"
 #include "lemon/backends/install_staging.h"
+#include "lemon/backends/package_install.h"
 #include "lemon/backends/strata/strata.h"
 #include "lemon/backends/strata/strata_model.h"
+#include "lemon/backends/strata/strata_package.h"
 #include "lemon/backends/strata/strata_process.h"
 #include "lemon/backends/strata/strata_runtime.h"
 #include "lemon/error_types.h"
@@ -382,6 +384,70 @@ public:
         prepare_engine_data(utils::path_from_utf8(executable).parent_path() / "lemonade-data", backend, progress);
     }
 
+    bool supports_package_upload() const override { return true; }
+
+    json validate_package(const std::string& directory, const std::string& backend,
+                          bool allow_unverified_release = false) const override {
+        return strata::validate_engine_package(utils::path_from_utf8(directory), backend,
+            get_current_os() + "-" + host_arch(), allow_unverified_release);
+    }
+
+    bool automatic_install_available(const std::string& backend) const override {
+        try {
+            StrataServer::get_install_params(backend, "");
+            return true;
+        } catch (const std::invalid_argument&) {
+            return false;
+        }
+    }
+
+    InstallCheck check_install(const std::string& backend, bool binary_found) const override {
+        std::lock_guard<std::recursive_mutex> lock(package_install_mutex());
+        const auto failed = [](const std::exception& error) -> InstallCheck {
+            const auto reason = std::string("Invalid installed Strata package: ") + error.what();
+            LOG(WARNING, "Strata") << reason << std::endl;
+            return {false, reason};
+        };
+        try {
+            const auto install_dir = BackendUtils::get_install_directory("strata", backend);
+            const auto receipt_path = fs::path(install_dir) / "lemonade-install.json";
+            const auto status = fs::symlink_status(receipt_path);
+            if (!fs::exists(status)) {
+                if (!automatic_install_available(backend)) {
+                    throw std::invalid_argument(
+                        "manual-only target has no validated installation receipt; upload a trusted engine package");
+                }
+                return {binary_found, ""};
+            }
+            if (!fs::is_regular_file(status)) throw std::invalid_argument("installation receipt is not a regular file");
+            const auto receipt = read_package_receipt("strata", backend);
+            if (!binary_found) throw std::invalid_argument("managed engine executable is missing");
+            const auto executable = BackendUtils::find_executable_in_install_dir(install_dir, strata::spec()->binary);
+            if (executable.empty()) throw std::invalid_argument("managed engine executable is missing");
+            strata::validate_installed_engine_package(utils::path_from_utf8(executable).parent_path(), backend,
+                get_current_os() + "-" + host_arch(), receipt);
+            return {true, ""};
+        } catch (const json::exception& error) {
+            return failed(error);
+        } catch (const std::invalid_argument& error) {
+            return failed(error);
+        } catch (const std::runtime_error& error) {
+            return failed(error);
+        }
+    }
+
+    std::optional<UnavailableState> classify_unavailable(
+        const std::string& backend, const std::string& install_error, const std::string&) const override {
+        if (install_error.rfind("Invalid installed Strata package: ", 0) == 0) {
+            return UnavailableState{"action_required", install_error + ". Upload a trusted engine package to repair it.",
+                "upload", false};
+        }
+        if (automatic_install_available(backend)) return std::nullopt;
+        return UnavailableState{"action_required",
+            "No official Strata engine package is available for this GPU. Upload a compatible trusted engine package.",
+            "upload", false};
+    }
+
     void populate_metadata(ModelInfo& info, const BackendOpsContext&) const override {
         const auto checkpoint = strata::model_checkpoint(info.checkpoint());
         // The prepared tokenizer rewrites the architecture to llama; read the original GGUF.
@@ -605,13 +671,8 @@ void StrataServer::load(const std::string& model_name, const ModelInfo& info,
         }
         plan.apply(command.args);
     }
-    const auto build = utils::JsonUtils::load_from_file(utils::path_to_utf8(engine_dir / "BUILD.json"));
     std::string library_path = utils::path_to_utf8(engine_dir);
-    for (const auto& entry : build.value("lib_dirs", json::array())) {
-        const auto relative = utils::path_from_utf8(entry.get<std::string>());
-        if (relative.is_absolute() || std::find(relative.begin(), relative.end(), fs::path("..")) != relative.end()) {
-            throw std::runtime_error("Strata library path escapes its engine package");
-        }
+    for (const auto& relative : strata::package_library_directories(engine_dir)) {
 #ifdef _WIN32
         library_path += ";" + utils::path_to_utf8(engine_dir / relative);
 #else

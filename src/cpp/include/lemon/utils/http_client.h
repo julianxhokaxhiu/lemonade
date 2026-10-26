@@ -114,6 +114,7 @@ struct DownloadOptions {
     int no_progress_timeout = 0;       // Seconds without byte progress before aborting; 0 uses the default timeout
     bool range_retry_on_zero_byte_retry = true; // Retry empty failed attempts with Range: 0-
     bool force_initial_range_request = false;   // Force Range: 0- even on the first attempt
+    uint64_t max_file_bytes = 0;
 
     // Optional content verification. expected_hash accepts plain hex or
     // prefixed values like "sha256:<hex>", "sha1:<hex>", or
@@ -126,6 +127,8 @@ struct DownloadOptions {
 
 class HttpClient {
 public:
+    static void verify_file(const std::string& path, const std::string& expected_hash);
+
     // curl reads CURLOPT_TIMEOUT 0 as "no timeout", which collides with the
     // 0-means-default convention every request method here uses. A caller that
     // genuinely wants to block indefinitely passes this instead.

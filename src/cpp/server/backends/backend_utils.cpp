@@ -1,6 +1,7 @@
 #include "lemon/backends/backend_utils.h"
 #include "lemon/backends/backend_ops.h"
 #include "lemon/backends/install_staging.h"
+#include "lemon/backends/package_install.h"
 #include "lemon/error_types.h"
 #include "lemon/runtime_config.h"
 #include "lemon/system_info.h"
@@ -453,6 +454,7 @@ namespace lemon::backends {
                                            const std::string& asset_pattern,
                                            const std::string& backend,
                                            DownloadProgressCallback progress_cb) {
+        std::lock_guard<std::recursive_mutex> install_lock(package_install_mutex());
         std::string install_dir;
         std::string version_file;
         std::string exe_path = find_external_backend_binary(spec.recipe, backend);
@@ -743,7 +745,13 @@ namespace lemon::backends {
             // Extract into the staging directory (NOT install_dir) so a failed
             // extraction cannot destroy the currently-installed binary. The
             // staging guard removes the partial tree when we throw.
-            if (!extract_archive(zip_path, staging_dir, spec.log_name())) {
+            const auto* package_ops = ops_for(spec.recipe);
+            if (package_ops->supports_package_upload()) {
+                extract_package_archive(utils::path_from_utf8(zip_path), utils::path_from_utf8(staging_dir));
+                const auto root = package_root(utils::path_from_utf8(staging_dir), spec.binary);
+                const auto identity = package_ops->validate_package(utils::path_to_utf8(root), backend);
+                write_package_receipt(staging_dir, spec.recipe, backend, "official", identity);
+            } else if (!extract_archive(zip_path, staging_dir, spec.log_name())) {
                 throw std::runtime_error("Failed to extract archive: " + zip_path);
             }
 

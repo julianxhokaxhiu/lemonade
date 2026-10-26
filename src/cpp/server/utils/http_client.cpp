@@ -264,6 +264,14 @@ static HashCheckResult verify_file_hash(const fs::path& path, const ExpectedHash
 
 } // namespace
 
+void HttpClient::verify_file(const std::string& path, const std::string& expected_hash) {
+    DownloadOptions options;
+    options.expected_hash = expected_hash;
+    const auto expected = parse_expected_hash(options);
+    const auto result = verify_file_hash(utils::path_from_utf8(path), expected);
+    if (!result.ok) throw std::runtime_error("File verification failed: " + path + ": " + result.error);
+}
+
 // Callback for writing response data to string
 static size_t write_callback(void* contents, size_t size, size_t nmemb, void* userp) {
     size_t total_size = size * nmemb;
@@ -307,8 +315,22 @@ static size_t response_header_callback(char* buffer, size_t size, size_t nitems,
 }
 
 // Callback for writing to file
+struct DownloadFileWriter {
+    FILE* file;
+    uint64_t written;
+    uint64_t limit;
+    bool exceeded = false;
+};
+
 static size_t write_file_callback(void* ptr, size_t size, size_t nmemb, void* stream) {
-    size_t written = fwrite(ptr, size, nmemb, static_cast<FILE*>(stream));
+    auto* writer = static_cast<DownloadFileWriter*>(stream);
+    const auto bytes = size * nmemb;
+    if (writer->limit && (writer->written > writer->limit || bytes > writer->limit - writer->written)) {
+        writer->exceeded = true;
+        return 0;
+    }
+    const auto written = fwrite(ptr, 1, bytes, writer->file);
+    writer->written += written;
     return written;
 }
 
@@ -905,7 +927,11 @@ DownloadResult HttpClient::download_attempt(const std::string& url,
 
     curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
     curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, write_file_callback);
-    curl_easy_setopt(curl, CURLOPT_WRITEDATA, fp);
+    DownloadFileWriter writer{fp, resume_from, options.max_file_bytes};
+    curl_easy_setopt(curl, CURLOPT_WRITEDATA, &writer);
+    if (options.max_file_bytes) {
+        curl_easy_setopt(curl, CURLOPT_MAXFILESIZE_LARGE, static_cast<curl_off_t>(options.max_file_bytes));
+    }
     if (!apply_http_security_policy(curl, policy, true)) {
         result.error_message = "Failed to apply HTTP security policy";
         fclose(fp);
@@ -974,6 +1000,12 @@ DownloadResult HttpClient::download_attempt(const std::string& url,
     result.curl_error = curl_easy_strerror(res);
 
     curl_easy_cleanup(curl);
+
+    if (writer.exceeded || res == CURLE_FILESIZE_EXCEEDED) {
+        result.permanent = true;
+        result.error_message = "Download exceeds maximum file size of " + std::to_string(options.max_file_bytes) + " bytes";
+        return result;
+    }
 
     if (was_stalled) {
         size_t current_file_size = 0;
@@ -1169,6 +1201,13 @@ DownloadResult HttpClient::download_file(const std::string& url,
     fs::path output_path_fs = path_from_utf8(output_path);
     fs::path partial_path_fs = path_from_utf8(partial_path);
 
+    if (options.max_file_bytes && fs::exists(output_path_fs) &&
+        fs::file_size(output_path_fs) > options.max_file_bytes) {
+        final_result.permanent = true;
+        final_result.error_message = "Existing file exceeds maximum download file size";
+        return final_result;
+    }
+
     // If a verified final file exists next to a stale .partial file, trust the
     // verified final file and remove the stale partial.
     if (expected_hash.present() && fs::exists(output_path_fs) && fs::exists(partial_path_fs)) {
@@ -1231,6 +1270,11 @@ DownloadResult HttpClient::download_file(const std::string& url,
     size_t resume_offset = 0;
     if (options.resume_partial && fs::exists(partial_path_fs)) {
         resume_offset = fs::file_size(partial_path_fs);
+        if (options.max_file_bytes && resume_offset > options.max_file_bytes) {
+            final_result.permanent = true;
+            final_result.error_message = "Partial file exceeds maximum download file size";
+            return final_result;
+        }
         if (resume_offset > 0) {
             LOG(INFO, "Download") << " Found partial file ("
                       << std::fixed << std::setprecision(1)

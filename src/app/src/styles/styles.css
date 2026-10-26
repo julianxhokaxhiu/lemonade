@@ -3187,6 +3187,7 @@ select,
 .select {
   appearance: none;
   -webkit-appearance: none;
+  color: var(--text-primary);
   background-color: var(--surface-1);
   background-image: var(--select-chevron);
   background-repeat: no-repeat;
@@ -11730,7 +11731,10 @@ a.backend-card__version:focus-visible {
   display: none;
 }
 
-.backend-card__actions { gap: var(--space-2); }
+.backend-card__actions {
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
 
 .backend-card__note {
   margin: 0;
@@ -11760,7 +11764,6 @@ a.backend-card__version:focus-visible {
   .workspace-catalog__heading { align-items: flex-start; flex-direction: column; gap: var(--space-1); }
   .backend-card__variant-head { gap: var(--space-2); }
   .backend-card__footer { align-items: flex-start; flex-direction: column; }
-  .backend-card__actions { flex-wrap: wrap; }
 }
 
 /* Dashboard */
@@ -13122,6 +13125,12 @@ a.backend-card__version:focus-visible {
   font-family: var(--font-mono);
   font-size: var(--text-sm);
   line-height: 1.55;
+}
+
+.backend-args-dialog__risk {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
 }
 
 .backend-args-dialog__actions {

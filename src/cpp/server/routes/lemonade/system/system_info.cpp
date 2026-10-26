@@ -200,6 +200,8 @@ ordered_json system_info_schema() {
                                     "message": {"type": "string", "description": "Human-readable status text for GUI and CLI users. Required for `unsupported`, `installable`, and `update_required`; empty for `installed`."},
                                     "action": {"type": "string", "description": "An instruction for the user: for install and update, usually the exact CLI command; for other states it may be empty or another action, such as a URL."},
                                     "version": {"type": "string", "description": "Installed or configured backend version (when available)"},
+                                    "upload_supported": {"type": "boolean", "description": "Whether this backend accepts a trusted engine archive through the internal upload endpoint."},
+                                    "installation_source": {"enum": ["manual", "official"], "description": "The source recorded for a validated engine installation, when present."},
                                     "tier": {"enum": ["core", "experimental", "guest"], "description": "`core`, `experimental`, or `guest`. See [Backend Tiers and Formats](#backend-tiers-and-formats)."},
                                     "format": {"enum": ["native", "python", "container"], "description": "`native`, `python`, or `container`. See [Backend Tiers and Formats](#backend-tiers-and-formats)."},
                                     "release_url": {"type": "string", "description": "Where the backend's release asset downloads from."},

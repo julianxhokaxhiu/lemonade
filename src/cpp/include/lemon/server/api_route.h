@@ -77,6 +77,7 @@ struct RouteSpec {
     ErrorFormat error_format = ErrorFormat::Plain;
     RequestFormat request_format = RequestFormat::Raw;  // Raw: no body parsing, only query argument values are checked; OptionalJson: an empty or null body is {}
     bool quiet_log = false;           // leave out of the access log
+    bool stream_request = false;
 };
 
 nlohmann::ordered_json route_spec_to_json(const RouteSpec& spec);
@@ -92,6 +93,7 @@ struct RouteRequest {
     // default purpose would demote a routing helper to a standard model.
     bool model_already_loaded = false;
     std::optional<RouterDispatchResult> route_decision;
+    const httplib::ContentReader* content_reader = nullptr;
 
     // serve() has renamed every alias to the argument's name, so these read one place: the body
     // for JsonBody and Form arguments, params for Query and Path ones.
@@ -121,7 +123,8 @@ public:
 
     // RouteRegistry calls this for every request: it parses the body as spec.request_format
     // says, checks the arguments, then calls handle().
-    void serve(const RouteSpec& spec, const httplib::Request& http, httplib::Response& res);
+    void serve(const RouteSpec& spec, const httplib::Request& http, httplib::Response& res,
+               const httplib::ContentReader* content_reader = nullptr);
 
     using StreamFn = std::function<void(const std::string& body, httplib::DataSink& sink)>;
 

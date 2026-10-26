@@ -23,6 +23,7 @@ Apps that talk to a system-wide Lemonade Server install must not use these endpo
 | `POST` | [`/internal/aliases`](#post-internalaliases) | Create or update a model alias |
 | `DELETE` | [`/internal/aliases/{alias}`](#delete-internalaliasesalias) | Remove a model alias |
 | `GET` | [`/internal/routes`](#get-internalroutes) | List every route's specification |
+| `POST` | [`/internal/backends/upload`](#post-internalbackendsupload) | Upload a backend engine archive |
 <!-- END GENERATED: internal.summary -->
 
 <!-- BEGIN GENERATED: internal.shutdown -->
@@ -216,6 +217,7 @@ Requires `LEMONADE_ADMIN_API_KEY` when it is set, otherwise `LEMONADE_API_KEY` w
 | `rocm_install_method` | No | Defaults to `"auto"`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `ryzenai` | No | `ryzenai` settings; send only the keys to change. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `sdcpp` | No | `sdcpp` settings; send only the keys to change. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `strata` | No | `strata` settings; send only the keys to change. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `telemetry` | No | `telemetry` settings; send only the keys to change. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `thenoise` | No | `thenoise` settings; send only the keys to change. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `thinksound` | No | `thinksound` settings; send only the keys to change. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
@@ -952,3 +954,61 @@ Requires `LEMONADE_ADMIN_API_KEY` when it is set, otherwise `LEMONADE_API_KEY` w
 - `request_format` - How `lemond` parses the request body: `Raw` not at all, `Json` as JSON, `OptionalJson` as JSON with an empty or `null` body read as `{}`, `Form` as a multipart form.
 - `quiet_log` - Whether the route is left out of the access log.
 <!-- END GENERATED: internal.routes -->
+
+<!-- BEGIN GENERATED: internal.backends_upload -->
+## `POST /internal/backends/upload`
+<sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>
+
+Uploads or downloads a native engine archive for backend-specific validation and atomic installation. Requires `X-Lemonade-Trust-Executable: true` and no loaded models for this recipe.
+
+Requires `LEMONADE_ADMIN_API_KEY` when it is set, otherwise `LEMONADE_API_KEY` when that is set.
+
+### Parameters
+
+| Parameter | Required | Description | Status |
+|-----------|----------|-------------|--------|
+| `recipe` (query) | Yes | Backend recipe accepting the package. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `backend` (query) | Yes | Backend variant, such as rocm or cuda. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `url` (query) | No | Download the archive on the server from this HTTP or HTTPS URL instead of uploading bytes. Cannot be combined with chunk fields. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `upload_id` (query) | No | A client-generated UUID shared by sequential upload chunks. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `offset` (query) | No | Chunk byte offset. Required with upload_id and total. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `total` (query) | No | Full archive byte count. Required with upload_id and offset, at most 4 GiB. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `allow_unverified_release` (query) | No | Explicitly accept an unverified engine version only when release metadata is not cached and cannot be fetched. Safe extraction and backend-specific checks still apply. Acceptance is remembered for this manual installation. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+
+Send a complete `.tar.gz` package. Archives are streamed to disk, limited to 4 GiB compressed and 16 GiB extracted. For large files, send sequential chunks of at most 32 MiB with upload_id, offset and total. Intermediate replies have status uploading and received/total byte counts; the final reply has status success. At most two incomplete uploads are retained; an inactive upload expires after ten minutes and is cleaned up on the next upload request or server exit. Uploads are serialized. Manual installations are never automatically replaced; uninstall first to return to upstream downloads. Only backends advertising upload_supported accept uploads. Package validation does not establish trusted authorship or safety of executable code. Byte uploads require `application/octet-stream` and are allowed in offline and no-fetch modes. Alternatively, supply url without an archive body to download directly on the server. HTTP and HTTPS sources, including private-network hosts and HTTP(S) redirects, are permitted. Lemonade authentication headers are never forwarded to the source. URL downloads are disabled in offline and no-fetch modes. allow_unverified_release is an explicit risk acknowledgement, not an override of cached or fetched metadata. It must remain unchanged across all chunks.
+
+### Examples
+
+### Response format
+
+#### Installed engine
+
+The validated engine was installed.
+
+- `status` - Always success.
+- `recipe` - The installed recipe.
+- `backend` - The installed backend variant.
+
+#### Refused upload
+
+The upload was refused.
+
+- `error` - Why the upload was refused.
+
+#### Upload chunk accepted
+
+More archive bytes are needed before validation and installation.
+
+- `status` - The archive is not installed yet.
+- `received` - Bytes received so far.
+- `total` - Expected total archive bytes.
+
+### Errors
+
+| Status | When |
+|--------|------|
+| `400` | Invalid or incompatible engine package |
+| `409` | Another engine upload is in progress |
+| `413` | Engine archives may not exceed 4 GiB |
+| `500` | The request fails unexpectedly |
+<!-- END GENERATED: internal.backends_upload -->

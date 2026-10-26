@@ -194,6 +194,7 @@ public:
     std::string get_sole_loaded_model_of_type(ModelType type) const;
 
     json get_all_loaded_models() const;
+    void with_backend_maintenance(const std::string& recipe, const std::function<void()>& operation);
 
     json get_max_model_limits() const;
 

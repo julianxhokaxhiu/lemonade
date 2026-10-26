@@ -2149,6 +2149,8 @@ The same backend can carry different labels on different operating systems. Each
         - `message` - Human-readable status text for GUI and CLI users. Required for `unsupported`, `installable`, and `update_required`; empty for `installed`.
         - `action` - An instruction for the user: for install and update, usually the exact CLI command; for other states it may be empty or another action, such as a URL.
         - `version` - Installed or configured backend version (when available)
+        - `upload_supported` - Whether this backend accepts a trusted engine archive through the internal upload endpoint.
+        - `installation_source` - The source recorded for a validated engine installation, when present.
         - `tier` - `core`, `experimental`, or `guest`. See [Backend Tiers and Formats](#backend-tiers-and-formats).
         - `format` - `native`, `python`, or `container`. See [Backend Tiers and Formats](#backend-tiers-and-formats).
         - `release_url` - Where the backend's release asset downloads from.

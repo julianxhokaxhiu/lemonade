@@ -73,6 +73,18 @@ The UI provides Chat (including supported multimodal modes), model discovery and
 
 Multiple GUI clients may connect to the same server. Server-side changes can be visible to all of them, while each client's local preferences remain independent.
 
+### Manual engine archives
+
+Backends advertising `upload_supported: true` in system-info offer **Upload engine**, including replacement of an installed engine. Select a non-empty `.tar.gz` archive, review the native-code trust warning, and choose **Trust and upload**. Unload models using that backend first. Uploads work without internet access and target the configured server, not the client filesystem.
+
+The shared browser/Tauri API client sends sequential raw `File.slice()` chunks of at most 32 MiB to `POST /internal/backends/upload?recipe=…&backend=…&upload_id=…&offset=…&total=…`. Archives larger than 4 GiB are rejected before sending. One cryptographic UUID identifies the upload; `offset` is the chunk's starting byte and `total` is the archive size. Every chunk uses `Content-Type: application/octet-stream`, `X-Lemonade-Trust-Executable: true`, and the existing admin credential (falling back to the regular API key). No native bridge or web injection changes are needed.
+
+The server acknowledges intermediate chunks with HTTP 202 `{status: "uploading", received, total}`, where `received` must match the chunk's ending byte. Only HTTP 200 `{status: "success", recipe, backend}` after the final chunk completes the upload. Errors or inconsistent acknowledgements stop further chunks; an optional client abort signal applies to all requests. There is no cancellation endpoint: abandoned server sessions expire after 10 minutes of inactivity. The server retains its 100 MiB per-request limit and may accept legacy single raw uploads without chunk parameters. It must enforce trust/authentication and in-use checks and allow these headers through CORS.
+
+The same dialog offers **Download from URL** and **Trust and install**. `downloadBackendArchive()` sends a bodyless `POST /internal/backends/upload?recipe=…&backend=…&url=…` with the same admin authorization and executable-trust header. The connected server fetches any HTTP(S) source, including private-network hosts, with bounded HTTP(S)-only redirects and no forwarding of Lemonade credentials. HTTP is unencrypted. URL downloads are disabled in offline/no-fetch mode; file uploads remain available. The server enforces the 4 GiB limit while downloading and uses the same validation, atomic replacement and manual-install receipt as file uploads. URL requests cannot include upload bytes or chunk fields, and URLs need not end in `.tar.gz` (for example, signed asset URLs). The client validates the final HTTP 200 identity before reporting success.
+
+System-info uses `action_required` / `action: "upload"` for manual-only targets and `installation_source: "manual" | "official"` for receipt-backed installations; manual installations display **Manual**.
+
 ## Source layout
 
 ```text

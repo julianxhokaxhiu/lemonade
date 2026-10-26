@@ -19,6 +19,13 @@ const files = {
 };
 const sources = Object.fromEntries(Object.entries(files).map(([key, filename]) => [key, fs.readFileSync(filename, 'utf8')]));
 const styles = fs.readFileSync(path.join(root, 'src/styles/styles.css'), 'utf8');
+const nativeSelectRule = styles.match(/(?:^|\n)select,\s*\.select\s*\{([^}]*)\}/)?.[1] || '';
+assert.match(nativeSelectRule, /color:\s*var\(--text-primary\)/);
+assert.match(nativeSelectRule, /background-color:\s*var\(--surface-1\)/);
+assert.match(sources.backendManager, /<select id="backend-upload-source" className="select"/);
+assert.match(sources.backendManager, /<WorkspaceActionButton[^>]*icon="file-up"[^>]*aria-label=\{`Upload engine for \$\{name\}`\}/);
+const backendActionStyles = styles.slice(0, styles.indexOf('@media (max-width: 680px)', styles.indexOf('.backend-card__logo')));
+assert.match(backendActionStyles, /\.backend-card__actions\s*\{[^}]*flex-wrap:\s*wrap;/);
 const fontStack = filename => fs.readFileSync(path.join(root, filename), 'utf8')
   .match(/--font-sans:\s*([^;]+);/)?.[1]?.replace(/\s+/g, ' ').trim() || '';
 const appFontStack = fontStack('src/styles/tokens.css');

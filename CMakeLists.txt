@@ -782,6 +782,18 @@ endif()
 # Application: lemond
 # ============================================================
 
+find_package(ZLIB QUIET)
+if(NOT ZLIB_FOUND)
+    set(ZLIB_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
+    FetchContent_Declare(upload_zlib
+        GIT_REPOSITORY https://github.com/madler/zlib.git
+        GIT_TAG v1.3.1
+        GIT_SHALLOW TRUE
+    )
+    FetchContent_MakeAvailable(upload_zlib)
+    add_library(ZLIB::ZLIB ALIAS zlibstatic)
+endif()
+
 set(EXECUTABLE_NAME "lemond")
 
 
@@ -1210,6 +1222,7 @@ endif()
 # ============================================================
 
 target_link_libraries(lemonade-server-core PUBLIC
+    ZLIB::ZLIB
     nlohmann_json::nlohmann_json
     lemonade-httplib
 )
@@ -2346,6 +2359,26 @@ if(BUILD_TESTING AND EXISTS "${_STRATA_TEST_SRC}")
             "$<TARGET_FILE_DIR:test_strata>/resources"
     )
     add_cpp_ci_test(StrataTest CI ON COMMAND test_strata)
+endif()
+
+set(_BACKEND_PACKAGE_TEST_SRC
+    "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_backend_package.cpp"
+)
+if(BUILD_TESTING AND EXISTS "${_BACKEND_PACKAGE_TEST_SRC}")
+    add_executable(test_backend_package test/cpp/test_backend_package.cpp)
+    target_link_libraries(test_backend_package PRIVATE lemonade-server-core)
+    add_dependencies(test_backend_package copy_resources)
+    add_cpp_ci_test(BackendPackageTest CI ON COMMAND test_backend_package)
+endif()
+
+set(_STRATA_PACKAGE_TEST_SRC
+    "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_strata_package.cpp"
+)
+if(BUILD_TESTING AND EXISTS "${_STRATA_PACKAGE_TEST_SRC}")
+    add_executable(test_strata_package test/cpp/test_strata_package.cpp)
+    target_link_libraries(test_strata_package PRIVATE lemonade-server-core)
+    add_dependencies(test_strata_package copy_resources)
+    add_cpp_ci_test(StrataPackageTest CI ON COMMAND test_strata_package)
 endif()
 
 set(_ARCHIVE_PLATFORM_TEST_SRC

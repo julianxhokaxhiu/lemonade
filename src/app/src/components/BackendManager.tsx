@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
-import api, { friendlyErrorMessage } from '../api';
+import api, { friendlyErrorMessage, isBackendArchiveUrl, type LoadedModel } from '../api';
 import { BackendTuning } from '../modelConfiguration';
 import { Icon, type IconName } from './Icon';
 import { WorkspaceCatalogLayout, WorkspaceCatalogSection } from './WorkspaceCatalogLayout';
@@ -30,6 +30,8 @@ interface BackendInfo {
   release_url?: string;
   download_filename?: string;
   can_uninstall?: boolean;
+  upload_supported?: boolean;
+  installation_source?: 'manual' | 'official';
   experimental?: boolean;
   display_name?: string;
 }
@@ -611,6 +613,84 @@ interface BackendArgsDialogProps {
   onClose: () => void;
 }
 
+function backendIsInUse(models: LoadedModel[], recipe: string, backend: string): boolean {
+  return models.some(model => {
+    if (model.recipe !== recipe) return false;
+    const selected = model.recipe_options?.backend || model.recipe_options?.[`${recipe}_backend`];
+    // Older servers do not report the selected variant; protect the whole recipe.
+    return typeof selected !== 'string' || !selected || selected === backend;
+  });
+}
+
+type BackendPackageSource = { kind: 'file'; archive: File } | { kind: 'url'; url: string };
+
+const BackendUploadDialog: React.FC<{
+  target: { recipe: string; backend: string };
+  disabled: boolean;
+  busy: boolean;
+  onUpload: (source: BackendPackageSource, allowUnverifiedRelease: boolean) => void;
+  onClose: () => void;
+}> = ({ target, disabled, busy, onUpload, onClose }) => {
+  const { t } = useI18n();
+  const [archive, setArchive] = useState<File | null>(null);
+  const [source, setSource] = useState<'file' | 'url'>('file');
+  const [url, setUrl] = useState('');
+  const [allowUnverifiedRelease, setAllowUnverifiedRelease] = useState(false);
+  const dialogRef = useRef<HTMLElement>(null);
+  useFocusTrap(dialogRef, true);
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') onClose();
+    };
+    document.addEventListener('keydown', onKeyDown);
+    return () => document.removeEventListener('keydown', onKeyDown);
+  }, [onClose]);
+  const validFile = archive && archive.size > 0 && archive.name.toLowerCase().endsWith('.tar.gz');
+  const valid = source === 'file' ? validFile : isBackendArchiveUrl(url.trim());
+
+  return (
+    <>
+      <div className="backend-args-scrim" onClick={onClose} />
+      <aside ref={dialogRef} className="backend-args-dialog" role="dialog" aria-modal="true" aria-labelledby="backend-upload-title" aria-describedby="backend-upload-warning">
+        <h2 id="backend-upload-title">{t('Upload engine')} · {RECIPE_LABELS[target.recipe] || target.recipe} · {target.backend}</h2>
+        <p id="backend-upload-warning" className="backend-args-dialog__notice">
+          {t('This archive contains native executable code that will run on the server with its permissions. Only install archives from a source you trust. Installing replaces any existing engine for this backend on the connected server.')}
+        </p>
+        <label className="field__label" htmlFor="backend-upload-source">{t('Archive source')}</label>
+        <select id="backend-upload-source" className="select" value={source} disabled={disabled} onChange={event => setSource(event.target.value === 'url' ? 'url' : 'file')}>
+          <option value="file">{t('Local file')}</option>
+          <option value="url">{t('Download from URL')}</option>
+        </select>
+        {source === 'file' ? <>
+          <label className="field__label" htmlFor="backend-upload-archive">{t('Engine archive (.tar.gz)')}</label>
+          <input id="backend-upload-archive" type="file" accept=".tar.gz" autoFocus disabled={disabled} onChange={event => setArchive(event.target.files?.[0] || null)} />
+          {archive && !valid && <p role="alert">{t('Select a non-empty .tar.gz engine archive.')}</p>}
+        </> : <>
+          <label className="field__label" htmlFor="backend-upload-url">{t('Engine archive URL')}</label>
+          <input id="backend-upload-url" type="url" value={url} autoFocus disabled={disabled} spellCheck={false} placeholder="https://example.com/engine.tar.gz" aria-describedby="backend-upload-url-notice" onChange={event => setUrl(event.target.value)} />
+          <p id="backend-upload-url-notice" className="backend-args-dialog__notice">{t('The connected server downloads this URL, including private-network addresses. HTTP is unencrypted. URL downloads are disabled in offline/no-fetch mode.')}</p>
+          {url && !valid && <p role="alert">{t('Enter a valid HTTP or HTTPS URL.')}</p>}
+        </>}
+        {target.recipe === 'strata' && <label className="backend-args-dialog__notice backend-args-dialog__risk">
+          <input type="checkbox" checked={allowUnverifiedRelease} disabled={disabled}
+            onChange={event => setAllowUnverifiedRelease(event.target.checked)} />
+          <span>{t('If release metadata is unavailable, I accept the risk that this engine version may not work as intended. Remember my acceptance for this installation. Available metadata, safe extraction and executable-presence checks still apply.')}</span>
+        </label>}
+        {disabled && <p role="status">{t(busy ? 'Installing…' : 'Unload models using this backend and wait for other backend operations to finish before uploading.')}</p>}
+        <WorkspaceActionGroup className="backend-args-dialog__actions" label={t('Engine upload actions')}>
+          <WorkspaceActionButton onClick={onClose}>{t('Cancel')}</WorkspaceActionButton>
+          <WorkspaceActionButton appearance="primary" disabled={disabled || !valid} onClick={() => {
+            if (source === 'url') onUpload({ kind: 'url', url: url.trim() }, allowUnverifiedRelease);
+            else if (archive) onUpload({ kind: 'file', archive }, allowUnverifiedRelease);
+          }}>
+            {t(busy ? 'Installing…' : source === 'file' ? 'Trust and upload' : 'Trust and install')}
+          </WorkspaceActionButton>
+        </WorkspaceActionGroup>
+      </aside>
+    </>
+  );
+};
+
 const BackendArgsDialog: React.FC<BackendArgsDialogProps> = ({
   backendKeyValue,
   tuning,
@@ -730,6 +810,10 @@ const BackendManager: React.FC<BackendManagerProps> = ({ isActive = true }) => {
   const [showLogos, setShowLogos] = useState(true);
   const [viewFilter, setViewFilter] = useState<BackendViewFilter>('all');
   const [installing, setInstalling] = useState<string | null>(null); // "recipe:backend"
+  const [uploadTarget, setUploadTarget] = useState<{ recipe: string; backend: string } | null>(null);
+  const [loadedModels, setLoadedModels] = useState(() => api.loadedModels);
+  const uploadTriggerRef = useRef<HTMLButtonElement | null>(null);
+  const uploadInFlightRef = useRef(false);
   const [toastMsg, setToastMsg] = useState<string | null>(null);
   const [runtimeConfig, setRuntimeConfig] = useState<Record<string, unknown>>({});
   const backendTunings = useMemo<Record<string, BackendTuning>>(
@@ -749,6 +833,8 @@ const BackendManager: React.FC<BackendManagerProps> = ({ isActive = true }) => {
   useEffect(() => {
     sysInfoRef.current = sysInfo;
   }, [sysInfo]);
+
+  useEffect(() => api.onModelStateChange(() => setLoadedModels(api.loadedModels)), []);
 
   /* ── Fetch system-info ────────────────────────────────── */
 
@@ -981,6 +1067,35 @@ const BackendManager: React.FC<BackendManagerProps> = ({ isActive = true }) => {
     }
   }, [fetchInfo, toast]);
 
+  const closeUploadDialog = useCallback(() => {
+    setUploadTarget(null);
+    window.requestAnimationFrame(() => uploadTriggerRef.current?.focus());
+  }, []);
+
+  const handleUpload = useCallback(async (source: BackendPackageSource, allowUnverifiedRelease: boolean) => {
+    if (!uploadTarget || installing || uploadInFlightRef.current) return;
+    const { recipe, backend } = uploadTarget;
+    const key = backendKey(recipe, backend);
+    uploadInFlightRef.current = true;
+    setInstalling(key);
+    try {
+      const health = await api.health();
+      if (backendIsInUse(health.all_models_loaded, recipe, backend)) {
+        throw new Error('Unload models using this backend before uploading.');
+      }
+      if (source.kind === 'file') await api.uploadBackend(recipe, backend, source.archive, true, undefined, allowUnverifiedRelease);
+      else await api.downloadBackendArchive(recipe, backend, source.url, true, undefined, allowUnverifiedRelease);
+      closeUploadDialog();
+      toast(`${RECIPE_LABELS[recipe] || recipe} · ${backend} installed`);
+      await fetchInfo(false);
+    } catch (err) {
+      toast(`Engine installation failed: ${friendlyErrorMessage(err)}`);
+    } finally {
+      uploadInFlightRef.current = false;
+      setInstalling(current => current === key ? null : current);
+    }
+  }, [closeUploadDialog, fetchInfo, installing, toast, uploadTarget]);
+
   const handleUpdateAll = useCallback(async () => {
     if (!sysInfo?.recipes) return;
     const updates: { recipe: string; backend: string }[] = [];
@@ -1079,7 +1194,7 @@ const BackendManager: React.FC<BackendManagerProps> = ({ isActive = true }) => {
           || backendInfo.state === 'update_required'
           || backendInfo.state === 'update_available'
         ) counts.installed++;
-        if (backendInfo.state === 'installable') counts.available++;
+        if (backendInfo.state === 'installable' || (backendInfo.state === 'action_required' && backendInfo.action === 'upload' && backendInfo.upload_supported === true)) counts.available++;
         if (backendInfo.state === 'update_required' || backendInfo.state === 'update_available') counts.updates++;
         if (isExperimentalBackend(recipe, recipeInfo, backendInfo)) counts.experimental++;
       }
@@ -1094,7 +1209,8 @@ const BackendManager: React.FC<BackendManagerProps> = ({ isActive = true }) => {
         || entry.info.state === 'update_required'
         || entry.info.state === 'update_available';
     }
-    if (viewFilter === 'available') return entry.info.state === 'installable';
+    if (viewFilter === 'available') return entry.info.state === 'installable'
+      || (entry.info.state === 'action_required' && entry.info.action === 'upload' && entry.info.upload_supported === true);
     if (viewFilter === 'updates') return entry.info.state === 'update_required' || entry.info.state === 'update_available';
     const recipeInfo = sysInfo?.recipes?.[entry.recipe];
     return recipeInfo ? isExperimentalBackend(entry.recipe, recipeInfo, entry.info) : Boolean(entry.info.experimental);
@@ -1140,6 +1256,7 @@ const BackendManager: React.FC<BackendManagerProps> = ({ isActive = true }) => {
             const cellKey = backendKey(recipe, backend);
             const canEditArgs = backendArgsTarget(runtimeConfig, cellKey) !== null;
             const isInstalling = installing === cellKey;
+            const inUse = backendIsInUse(loadedModels, recipe, backend);
             const backendDownload = downloadItems.find(download => backendDownloadMatches(download, recipe, backend));
             const showBackendProgress = Boolean(backendDownload && (isDownloadActive(backendDownload) || backendDownload.status === 'paused'));
             const tuning = backendTunings[cellKey] || null;
@@ -1170,6 +1287,7 @@ const BackendManager: React.FC<BackendManagerProps> = ({ isActive = true }) => {
                     )}
                   </h4>
                   {info.state !== 'installable' && <span className={`cell__badge ${badge.cls}`}>{t(badge.label)}</span>}
+                  {info.installation_source === 'manual' && <span className="cell__badge cell__badge--ok">{t('Manual')}</span>}
                 </div>
 
                 <div className="backend-card__variant-meta">
@@ -1236,7 +1354,23 @@ const BackendManager: React.FC<BackendManagerProps> = ({ isActive = true }) => {
                         {isInstalling ? t('Updating…') : t('Update')}
                       </WorkspaceActionButton>
                     )}
-                    {info.state === 'action_required' && info.action && (
+                    {info.upload_supported === true && (
+                      <WorkspaceActionButton
+                        size="small"
+                        appearance="secondary"
+                        icon="file-up"
+                        aria-label={`Upload engine for ${name}`}
+                        disabled={installing !== null || inUse || showBackendProgress}
+                        title={inUse ? t('Unload models using this backend before uploading.') : undefined}
+                        onClick={event => {
+                          uploadTriggerRef.current = event.currentTarget;
+                          setUploadTarget({ recipe, backend });
+                        }}
+                      >
+                        {isInstalling && uploadInFlightRef.current ? t('Installing…') : t('Upload engine')}
+                      </WorkspaceActionButton>
+                    )}
+                    {info.state === 'action_required' && info.action && info.action !== 'upload' && (
                       <WorkspaceActionButton
                         size="small"
                         appearance="secondary"
@@ -1300,7 +1434,7 @@ const BackendManager: React.FC<BackendManagerProps> = ({ isActive = true }) => {
         </div>
       </article>
     );
-  }, [backendTunings, downloadItems, handleAction, handleInstall, handleUninstall, installing, runtimeConfig, showLogos, showTech, sysInfo]);
+  }, [backendTunings, downloadItems, handleAction, handleInstall, handleUninstall, installing, loadedModels, runtimeConfig, showLogos, showTech, sysInfo, t]);
 
 
   const isUpdatesView = viewFilter === 'updates';
@@ -1422,6 +1556,16 @@ const BackendManager: React.FC<BackendManagerProps> = ({ isActive = true }) => {
         )}
       </>}
       overlay={<>
+        {uploadTarget && (
+          <BackendUploadDialog
+            key={backendKey(uploadTarget.recipe, uploadTarget.backend)}
+            target={uploadTarget}
+            disabled={installing !== null || backendIsInUse(loadedModels, uploadTarget.recipe, uploadTarget.backend)}
+            busy={installing === backendKey(uploadTarget.recipe, uploadTarget.backend) && uploadInFlightRef.current}
+            onUpload={handleUpload}
+            onClose={closeUploadDialog}
+          />
+        )}
         <BackendArgsDialog
           backendKeyValue={argsEditorKey}
           tuning={argsEditorKey ? backendTunings[argsEditorKey] || null : null}

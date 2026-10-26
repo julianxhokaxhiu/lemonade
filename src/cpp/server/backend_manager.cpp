@@ -2,7 +2,10 @@
 #include "lemon/backend_version_policy.h"
 #include "lemon/backends/backend_descriptor_registry.h"
 #include "lemon/backends/backend_ops.h"
+#include "lemon/backends/backend_registry.h"
 #include "lemon/backends/backend_utils.h"
+#include "lemon/backends/install_staging.h"
+#include "lemon/backends/package_install.h"
 #include "lemon/runtime_config.h"
 #include "lemon/system_info.h"
 #include "lemon/utils/github_api.h"
@@ -571,6 +574,7 @@ BackendManager::InstallParams BackendManager::get_install_params(const std::stri
 void BackendManager::install_backend(const std::string& recipe, const std::string& backend,
                                      bool force,
                                      DownloadProgressCallback progress_cb) {
+    std::lock_guard<std::recursive_mutex> install_lock(backends::package_install_mutex());
     std::string resolved_backend = normalize_backend_name(recipe, backend);
     LOG(DEBUG, "BackendManager") << "Installing " << recipe << ":" << resolved_backend << std::endl;
 
@@ -591,6 +595,25 @@ void BackendManager::install_backend(const std::string& recipe, const std::strin
     const std::string existing_backend_binary =
         installed_backend_binary_path(*spec, resolved_backend);
     const bool has_existing_backend = !existing_backend_binary.empty();
+
+    if (!backends::BackendUtils::find_external_backend_binary(recipe, resolved_backend).empty()) {
+        report_backend_ready(recipe, resolved_backend, progress_cb);
+        return;
+    }
+    const auto receipt = backends::read_package_receipt(recipe, resolved_backend);
+    if (!receipt.is_null()) {
+        const auto check = backends::ops_for(recipe)->check_install(resolved_backend, has_existing_backend);
+        if (!check.installed) {
+            throw std::runtime_error("Backend installation is invalid; upload a replacement, or uninstall then reinstall it. " + check.error);
+        }
+        if (receipt.at("source") == "manual") {
+            report_backend_ready(recipe, resolved_backend, progress_cb);
+            return;
+        }
+    }
+    if (!backends::ops_for(recipe)->automatic_install_available(resolved_backend)) {
+        throw std::runtime_error("No upstream engine for this device. Upload a compatible engine archive in Backend Manager.");
+    }
 
     if (auto* cfg = RuntimeConfig::global()) {
         const bool offline = cfg->offline();
@@ -842,6 +865,7 @@ void BackendManager::install_backend(const std::string& recipe, const std::strin
 }
 
 void BackendManager::uninstall_backend(const std::string& recipe, const std::string& backend) {
+    std::lock_guard<std::recursive_mutex> install_lock(backends::package_install_mutex());
     std::string resolved_backend = normalize_backend_name(recipe, backend);
     LOG(DEBUG, "BackendManager") << "Uninstalling " << recipe << ":" << resolved_backend << std::endl;
 
@@ -868,6 +892,54 @@ void BackendManager::uninstall_backend(const std::string& recipe, const std::str
     } else {
         LOG(DEBUG, "BackendManager") << "Nothing to uninstall at: " << install_dir << std::endl;
     }
+}
+
+void BackendManager::install_uploaded_backend(const std::string& recipe, const std::string& backend,
+                                               const std::string& archive, bool allow_unverified_release) {
+    std::lock_guard<std::recursive_mutex> install_lock(backends::package_install_mutex());
+    const auto* spec = backends::try_get_spec_for_recipe(recipe);
+    const auto* ops = backends::ops_for(recipe);
+    if (!spec || !ops->supports_package_upload()) {
+        throw std::invalid_argument("This backend does not support engine archive uploads");
+    }
+    if (!backends::BackendUtils::find_external_backend_binary(recipe, backend).empty()) {
+        throw std::invalid_argument("Clear the external binary path override before uploading an engine");
+    }
+    const auto supported = SystemInfo::get_supported_backends(recipe).backends;
+    if (std::find(supported.begin(), supported.end(), backend) == supported.end()) {
+        throw std::invalid_argument("Backend is not supported by this server's hardware");
+    }
+    const auto resolved = normalize_backend_name(recipe, backend);
+    const auto install_dir = backends::BackendUtils::get_install_directory(recipe, resolved);
+    const auto staging = utils::path_from_utf8(install_dir + ".upload-staging");
+    fs::remove_all(staging);
+    struct Cleanup {
+        fs::path path;
+        ~Cleanup() { std::error_code ec; fs::remove_all(path, ec); }
+    } cleanup{staging};
+    backends::extract_package_archive(utils::path_from_utf8(archive), staging);
+    const auto root = backends::package_root(staging, spec->binary);
+    const auto identity = ops->validate_package(utils::path_to_utf8(root), resolved, allow_unverified_release);
+    const auto release_version = backends::BackendUtils::get_backend_version(recipe, resolved);
+    {
+        std::ofstream version(staging / "version.txt", std::ios::binary);
+        version << release_version;
+        version.flush();
+        if (!version.good()) throw std::runtime_error("Cannot write uploaded backend version");
+    }
+    backends::write_package_receipt(staging, recipe, resolved, "manual", identity);
+#ifndef _WIN32
+    for (const auto& entry : fs::recursive_directory_iterator(staging)) {
+        if (entry.is_regular_file()) {
+            fs::permissions(entry.path(), fs::perms::owner_exec, fs::perm_options::add);
+        }
+    }
+#endif
+    if (backends::commit_staged_install(utils::path_to_utf8(staging), install_dir, spec->binary).empty()) {
+        throw std::runtime_error("Uploaded backend executable disappeared before installation");
+    }
+    SystemInfoCache::invalidate_recipes();
+    LOG(INFO, "BackendManager") << "Installed manually uploaded " << recipe << ":" << resolved << std::endl;
 }
 
 // ============================================================================

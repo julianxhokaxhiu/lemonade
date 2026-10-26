@@ -284,6 +284,7 @@ std::unique_ptr<SystemInfo> create_system_info();
 // Helper to identify ROCm architecture from GPU name
 // Returns architecture string (e.g., "gfx1150", "gfx1151", "gfx110X", "gfx120X") or empty string if not recognized
 std::string identify_rocm_arch_from_name(const std::string& device_name);
+std::string identify_rocm_arch_from_pnp_id(const std::string& pnp_id);
 
 // Helper to identify CUDA Compute Capability from a marketing GPU name
 // Returns an sm_XX token (e.g., "sm_75", "sm_86", "sm_120") or empty string if not recognized

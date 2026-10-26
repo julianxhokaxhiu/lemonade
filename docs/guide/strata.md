@@ -47,7 +47,99 @@ lemonade run Qwen3.8-Flash-Next-Q2_0-Strata --strata rocm --ctx-size 8192
 Use `strata:cuda` / `--strata cuda` for NVIDIA CUDA 12, `strata:cuda13` /
 `--strata cuda13` for CUDA 13, or `strata:metal` / `--strata metal` on Apple Silicon.
 The usual automatic backend selection also works. Backend installation is automatic
-when a model is first pulled or loaded.
+when a model is first pulled or loaded, provided an upstream package exists.
+
+### Manually uploaded engines
+
+In Backend Manager, choose **Upload engine** for the target backend and select a
+complete `.tar.gz` engine component package. Confirm that you trust its native
+executable code. Uploads go to the connected server, including when using the
+browser or a remote server; the client's filesystem path is not used by the server.
+Unload the recipe's models before uploading a replacement.
+
+The same dialog also offers **Download from URL**. Enter the HTTP or HTTPS URL
+of a complete `.tar.gz` engine archive and choose **Trust and install**. The
+connected server downloads the archive directly, including from private-network
+hosts; the browser does not relay it. Redirects are limited to HTTP(S), and
+Lemonade API/admin credentials are not forwarded to the source. HTTP is
+unencrypted, so prefer HTTPS. URL acquisition is disabled in offline/no-fetch
+mode; uploading a local file remains available.
+
+Both upstream and uploaded Strata packages require an `engine-component.json`
+object with a compatible `version` and the expected native executable at the
+package root (`strata.exe` on Windows, `strata` elsewhere).
+Accepted engine versions are discovered from the `strata-engine-*` archives
+published in the release pinned for that backend in
+[`backend_versions.json`](../../src/cpp/resources/backend_versions.json), filtered
+by host platform and backend/toolkit. Custom builds may use those same engine
+versions, including builds for GPUs without official archives. The source CMake
+project version and the separately versioned Control, DeepSeek and app components
+do not determine compatibility.
+On Windows, recognized AMD PCI device IDs provide the concrete GPU target (for
+example, `gfx1201` for an RX 9070 XT) while retaining the GPU's display name.
+Download-family labels such as `gfx120X` select archive families.
+
+Installation does not enforce the manifest's schema, file list, hashes, sizes,
+platform, backend/toolkit, GPU targets or agreement with `BUILD.json`, and does
+not infer required kernel sidecars from library strings. Version acceptance is
+not a guarantee of hardware compatibility, runtime completeness, integrity or
+successful inference. Choose a trusted build intended for the server's hardware;
+for example, a `gfx1151` build is not a substitute for `gfx1150`. Shared archive
+extraction still rejects links and unsafe paths. Runtime library search paths
+remain confined to existing directories inside the package.
+
+Successful file uploads and URL installations are marked **Manual** and retained across server restarts.
+The installed version uses the pinned Strata release tag, just like an official
+installation. The manifest's independently versioned engine number is retained
+in the installation receipt for compatibility validation, not used as the
+displayed release version.
+Release metadata is cached by repository and exact tag under the server's cache
+directory (`strata/releases/`). Local upload and installed-package validation work
+offline/no-fetch when that metadata is already cached. If metadata is not cached
+and cannot be fetched (including offline/no-fetch mode or network failures),
+validation refuses unless you select the explicit risk-acceptance checkbox in the
+upload dialog. This permits fully offline local engine installation without
+claiming that its engine version is verified against the pinned release.
+
+The acknowledgement is stored in that manual installation's receipt, so it remains
+usable after server restarts while metadata is unavailable. Each replacement upload
+requires fresh acknowledgement. The exception bypasses only release-version
+verification: a valid version manifest, safe extraction and the expected executable
+are still required. It does not enable URL downloads in offline/no-fetch mode, or
+waive model download/preparation requirements.
+
+Cached or successfully fetched metadata always takes precedence, even if the
+checkbox was selected or the receipt records acceptance. A pin change selects the
+new tag's metadata; an engine version not published for that pin is rejected whenever
+the metadata is available. Malformed metadata, corrupt caches and disk-write errors
+are not treated as an offline exception.
+
+Manual installations are never automatically overwritten
+by upstream updates. Upload another compatible archive to replace one, or
+uninstall it to return to automatic upstream installation where supported.
+Failed validation leaves the existing engine unchanged.
+
+The upload transport is backend-independent; Strata's validation rules are not
+applied to other backends. A backend must opt in and supply its own package
+validator. The internal upload endpoint uses admin authorization and requires an
+explicit executable-trust header. Archives are limited to 4 GiB compressed and
+16 GiB extracted. The UI sends 32 MiB chunks, preserving the server's existing
+per-request body limit. Up to two incomplete uploads are retained; inactive
+uploads expire after ten minutes and are cleaned up on the next upload request
+or server exit. Uploaded manifest file hashes are not checked; only install native
+code from sources you trust.
+
+To check an archive without installing or executing it, build the
+`test_strata_package` target and run:
+
+```text
+test_strata_package --validate-archive ARCHIVE SCRATCH_DIRECTORY BACKEND PLATFORM
+```
+
+For example, use `rocm windows-x86_64` for a Windows HIP archive. This runs the
+shared safe extractor and Strata validator, printing the accepted identity.
+Extraction and release metadata are stored under the scratch directory; remove
+that directory when finished.
 
 Automatic context sizing uses the selected engine release's `default_context`
 (currently 8192 tokens), capped by the model's context limit. It does not apply
@@ -505,6 +597,11 @@ not enable it. Environment settings must be present in the server process
 before it launches the engine.
 
 GitHub metadata is queried only when installation or replacement is needed.
+Existing official packages are checked against their installation receipt, not
+the new release's engine version. An intact older official engine therefore
+offers the normal update action instead of being classified as requiring an
+upload. New packages still undergo release-version validation, and manual
+installations retain their existing validation and replacement policy.
 Already-installed compatible engines still load offline; ordinary loads and
 automatic context sizing do not query GitHub. GitHub API rate limits apply to
 installation; `GITHUB_TOKEN` or `GH_TOKEN` can raise the limit.

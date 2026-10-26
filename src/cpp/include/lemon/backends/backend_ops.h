@@ -49,6 +49,15 @@ class BackendOps {
 public:
     virtual ~BackendOps() = default;
 
+    virtual bool supports_package_upload() const { return false; }
+
+    virtual nlohmann::json validate_package(const std::string&, const std::string&,
+                                           bool = false) const {
+        throw std::invalid_argument("This backend does not support package uploads");
+    }
+
+    virtual bool automatic_install_available(const std::string&) const { return true; }
+
     // Populate model-specific metadata (context window, capability labels, …)
     // for a downloaded model. Default: nothing.
     virtual void populate_metadata(ModelInfo& info, const BackendOpsContext& ctx) const {

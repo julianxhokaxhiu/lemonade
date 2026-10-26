@@ -150,6 +150,13 @@ void RouteRegistry::apply(httplib::Server& server) const {
         for (const auto& pattern : entry->patterns) {
             for (const auto& method : entry->spec.methods) {
                 if (method == "GET") server.Get(pattern, handler);
+                else if (method == "POST" && entry->spec.stream_request) {
+                    server.Post(pattern, [shared](const httplib::Request& req, httplib::Response& res,
+                                                  const httplib::ContentReader& reader) {
+                        shared->route->serve(shared->spec, req, res, &reader);
+                    });
+                    server.Post(pattern, handler);
+                }
                 else if (method == "POST") server.Post(pattern, handler);
                 else if (method == "DELETE") server.Delete(pattern, handler);
                 else if (method == "PUT") server.Put(pattern, handler);

@@ -20,6 +20,8 @@ public:
                          bool force = false,
                          DownloadProgressCallback progress_cb = nullptr);
     void uninstall_backend(const std::string& recipe, const std::string& backend);
+    void install_uploaded_backend(const std::string& recipe, const std::string& backend,
+                                  const std::string& archive, bool allow_unverified_release = false);
 
     // Query operations
     std::string get_latest_version(const std::string& recipe, const std::string& backend);

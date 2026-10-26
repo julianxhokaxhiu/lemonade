@@ -24,6 +24,15 @@ const DEFAULT_BASE_URL = process.env.LEMONADE_BASE_URL || detectDefaultBaseUrl()
 const LS_BASE_URL = 'lemonade_base_url';
 const LS_API_KEY = 'lemonade_api_key';
 
+export function isBackendArchiveUrl(value: string): boolean {
+  if (value.length > 8192 || !/^https?:\/\/[^\s]+$/i.test(value)) return false;
+  try {
+    return new URL(value).hostname.length > 0;
+  } catch {
+    return false;
+  }
+}
+
 export interface LemonadeRequestError extends Error {
   status?: number;
   url?: string;
@@ -1938,6 +1947,95 @@ class LemonadeAPI {
   }
 
   // ── Backend management ──────────────────────────────────────────
+
+  async downloadBackendArchive(
+    recipe: string,
+    backend: string,
+    url: string,
+    trustExecutable: boolean,
+    signal?: AbortSignal,
+    allowUnverifiedRelease = false,
+  ): Promise<{ status: 'success'; recipe: string; backend: string }> {
+    if (trustExecutable !== true) throw new Error('Confirm that you trust this archive to execute native code.');
+    const archiveUrl = url.trim();
+    if (!isBackendArchiveUrl(archiveUrl)) throw new Error('Enter a valid HTTP or HTTPS URL.');
+    signal?.throwIfAborted();
+    const query = new URLSearchParams({ recipe, backend, url: archiveUrl });
+    if (allowUnverifiedRelease) query.set('allow_unverified_release', 'true');
+    const response = await this._fetch(`/internal/backends/upload?${query}`, {
+      method: 'POST',
+      auth: 'admin',
+      signal,
+      headers: { 'X-Lemonade-Trust-Executable': 'true' },
+    });
+    const result: unknown = await response.json();
+    if (isObject(result) && typeof result.error === 'string') throw new Error(result.error);
+    if (response.status !== 200 || !isObject(result) || result.status !== 'success'
+        || result.recipe !== recipe || result.backend !== backend) {
+      throw new Error('Unexpected backend installation response.');
+    }
+    this._notifyModelsChanged();
+    return { status: 'success', recipe, backend };
+  }
+
+  async uploadBackend(
+    recipe: string,
+    backend: string,
+    archive: File,
+    trustExecutable: boolean,
+    signal?: AbortSignal,
+    allowUnverifiedRelease = false,
+  ): Promise<{ status: 'success'; recipe: string; backend: string }> {
+    if (trustExecutable !== true) throw new Error('Confirm that you trust this archive to execute native code.');
+    if (!archive.name.toLowerCase().endsWith('.tar.gz') || archive.size === 0) {
+      throw new Error('Select a non-empty .tar.gz engine archive.');
+    }
+    if (archive.size > 4 * 1024 * 1024 * 1024) {
+      throw new Error('Engine archives must not exceed 4 GiB.');
+    }
+    const chunkSize = 32 * 1024 * 1024;
+    const uploadId = createSecureClientSessionId();
+    for (let offset = 0; offset < archive.size;) {
+      signal?.throwIfAborted();
+      const end = Math.min(offset + chunkSize, archive.size);
+      const query = new URLSearchParams({
+        recipe,
+        backend,
+        upload_id: uploadId,
+        offset: String(offset),
+        total: String(archive.size),
+      });
+      if (allowUnverifiedRelease) query.set('allow_unverified_release', 'true');
+      const response = await this._fetch(`/internal/backends/upload?${query}`, {
+        method: 'POST',
+        auth: 'admin',
+        signal,
+        headers: {
+          'Content-Type': 'application/octet-stream',
+          'X-Lemonade-Trust-Executable': 'true',
+        },
+        body: archive.slice(offset, end),
+      });
+      const result: unknown = await response.json();
+      if (!isObject(result)) throw new Error('Unexpected backend upload response.');
+      if (typeof result.error === 'string') throw new Error(result.error);
+      if (end < archive.size) {
+        if (response.status !== 202 || result.status !== 'uploading'
+            || result.received !== end || result.total !== archive.size) {
+          throw new Error('Unexpected backend upload acknowledgement.');
+        }
+        offset = end;
+      } else {
+        if (response.status !== 200 || result.status !== 'success'
+            || result.recipe !== recipe || result.backend !== backend) {
+          throw new Error('Unexpected backend upload response.');
+        }
+        this._notifyModelsChanged();
+        return { status: 'success', recipe, backend };
+      }
+    }
+    throw new Error('Unexpected backend upload response.');
+  }
 
   async installBackend(
     recipe: string,

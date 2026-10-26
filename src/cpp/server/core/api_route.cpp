@@ -475,8 +475,9 @@ const httplib::FormData* RouteRequest::file(const RouteArg& arg) const {
 }
 
 void ApiRoute::serve(const RouteSpec& spec, const httplib::Request& http,
-                     httplib::Response& res) {
+                     httplib::Response& res, const httplib::ContentReader* content_reader) {
     RouteRequest req{http, spec};
+    req.content_reader = content_reader;
     collect_params(req);
 
     if (spec.request_format == RequestFormat::Json ||
@@ -511,7 +512,7 @@ void ApiRoute::serve(const RouteSpec& spec, const httplib::Request& http,
         if (!check_args(req, res)) {
             return;
         }
-    } else if (spec.request_format == RequestFormat::Raw && !check_args(req, res, true)) {
+    } else if (spec.request_format == RequestFormat::Raw && !check_args(req, res, !spec.stream_request)) {
         return;
     }
 

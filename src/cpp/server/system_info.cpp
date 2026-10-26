@@ -12,6 +12,7 @@
 #include "lemon/backends/backend_utils.h"
 #include "lemon/backends/backend_descriptor_registry.h"
 #include "lemon/backends/backend_registry.h"
+#include "lemon/backends/package_install.h"
 #include "lemon/recipe_backend_def.h"
 #include <filesystem>
 #include <fstream>
@@ -1449,7 +1450,8 @@ json SystemInfo::build_recipes_info(const json& devices) {
             } else {
                 auto* cfg = RuntimeConfig::global();
                 bool no_fetch = cfg && cfg->no_fetch_executables();
-                backend["state"] = no_fetch ? "unsupported" : "installable";
+                const bool upload_supported = backends::ops_for(def.recipe)->supports_package_upload();
+                backend["state"] = no_fetch ? (upload_supported ? "action_required" : "unsupported") : "installable";
                 std::string default_message = no_fetch
                     ? "Automatic backend install is disabled."
                     : "Backend is supported but not installed.";
@@ -1464,12 +1466,16 @@ json SystemInfo::build_recipes_info(const json& devices) {
                     && !install_error.empty() && needs_gfx1151_cwsr_fix()) {
                     backend["action"] = "Visit https://lemonade-server.ai/gfx1151_linux.html";
                 } else {
-                    backend["action"] = default_install_command;
+                    backend["action"] = no_fetch && upload_supported ? "upload" : default_install_command;
                 }
             }
         } else {
             std::string installed_version = get_recipe_version(def.recipe, def.backend);
             std::string expected_version = get_expected_backend_version(def.recipe, def.backend);
+            if (backends::ops_for(def.recipe)->supports_package_upload()) {
+                const auto receipt = backends::read_package_receipt(def.recipe, def.backend);
+                if (!receipt.is_null() && receipt.at("source") == "manual") expected_version.clear();
+            }
 
             // The user's *_bin pin overrides what the state machine considers
             // "expected" — otherwise an explicit-tag pin (e.g. b8664) would
@@ -1614,6 +1620,21 @@ json SystemInfo::build_recipes_info(const json& devices) {
             selected_tier != backend_tier_to_string(BackendTier::Core);
         entry["web_display_name"] = desc->web_display_name.empty() ? desc->display_name : desc->web_display_name;
         entry["slot_policy"] = slot_policy_to_string(desc->slot_policy);
+        for (auto& [name, status] : entry["backends"].items()) {
+            if (!backends::ops_for(desc->recipe)->supports_package_upload()) continue;
+            status["upload_supported"] = status.value("state", "unsupported") != "unsupported";
+            try {
+                const auto receipt = backends::read_package_receipt(desc->recipe, name);
+                if (!receipt.is_null()) status["installation_source"] = receipt.at("source");
+            } catch (const std::exception& e) {
+                LOG(ERROR, "SystemInfo") << "Invalid backend receipt: " << e.what() << std::endl;
+                if (status.value("state", "unsupported") != "unsupported") {
+                    status["state"] = "action_required";
+                    status["message"] = std::string("Invalid installation receipt: ") + e.what();
+                    status["action"] = "upload";
+                }
+            }
+        }
         // Machine-independent support matrix (OS + device families + friendly
         // device summary per backend), straight from the descriptor.
         json support = json::array();
@@ -1821,6 +1842,34 @@ static std::string compute_cap_to_sm(const std::string& compute_cap) {
 // GPUs that are confirmed to have a supported sm_XX binary.
 std::string identify_cuda_arch_from_name(const std::string& device_name) {
     return system_info_detail::identify_cuda_arch_from_name(device_name);
+}
+
+std::string identify_rocm_arch_from_pnp_id(const std::string& pnp_id) {
+    std::string id = pnp_id;
+    std::transform(id.begin(), id.end(), id.begin(), [](unsigned char c) {
+        return static_cast<char>(std::tolower(c));
+    });
+    std::smatch match;
+    if (!std::regex_search(id, match, std::regex(R"(^pci\\ven_1002&dev_([0-9a-f]{4})(?:&|\\|$))"))) {
+        return "";
+    }
+    static const std::map<std::string, std::string> architectures = {
+        {"1586", "gfx1151"},
+        {"73a5", "gfx1030"},
+        {"73af", "gfx1030"},
+        {"73bf", "gfx1030"},
+        {"73df", "gfx1031"},
+        {"7448", "gfx1100"},
+        {"744c", "gfx1100"},
+        {"745e", "gfx1100"},
+        {"747e", "gfx1101"},
+        {"7480", "gfx1102"},
+        {"7550", "gfx1201"},
+        {"7551", "gfx1201"},
+        {"7590", "gfx1200"}
+    };
+    const auto found = architectures.find(match[1].str());
+    return found == architectures.end() ? "" : found->second;
 }
 
 // Helper to identify ROCm architecture from GPU name.
@@ -2739,6 +2788,12 @@ std::vector<GPUInfo> WindowsSystemInfo::detect_amd_gpus(const std::string& gpu_t
                 GPUInfo gpu;
                 gpu.name = name;
                 gpu.available = true;
+
+                const auto arch = identify_rocm_arch_from_pnp_id(wmi::get_property_string(pObj, L"PNPDeviceID"));
+                if (!arch.empty()) {
+                    gpu.name = arch;
+                    gpu.display_name = name;
+                }
 
                 // Get driver version
                 gpu.driver_version = get_driver_version("AMD-OpenCL User Mode Driver");
