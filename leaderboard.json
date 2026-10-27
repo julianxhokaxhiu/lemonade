@@ -1,0 +1,18 @@
+{
+  "generated_at": "2026-10-27T07:23:04.000290+00:00",
+  "run_id": "39561555690",
+  "run_url": "https://github.com/julianxhokaxhiu/lemonade/actions/runs/39561555690",
+  "repo": "julianxhokaxhiu/lemonade",
+  "repo_url": "https://github.com/julianxhokaxhiu/lemonade",
+  "actions_url": "https://github.com/julianxhokaxhiu/lemonade/actions/workflows/benchmark-regression.yml",
+  "commit": "10166a85ba53d1b4b8b9dec8179b1acdbeef03c2",
+  "lemonade_version": null,
+  "lemonade_versions_seen": [],
+  "systems": [],
+  "experimental_forks": [
+    "llamacpp-hrx",
+    "halo-box-strix"
+  ],
+  "by_model_scenario": {},
+  "history": {}
+}
