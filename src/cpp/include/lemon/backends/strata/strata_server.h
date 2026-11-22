@@ -27,12 +27,13 @@ private:
 
 namespace strata {
 std::string engine_asset(const std::string& platform, const std::string& backend,
-                         const std::string& arch, const json& assets);
+                         const std::string& arch, const json& assets, const std::string& family = "qwen");
 std::vector<BackendAsset> additional_assets(const std::string& backend, const std::string& version);
 json checkpoint_selection(const std::string& checkpoint);
 double streaming_memory_pool_gb(const json& devices, const std::vector<std::string>& backends,
                                 double system_ram_gb, bool assume_dgpu_gtt);
-void validate_options(int ctx_size, const std::string& custom_args, int parallel, bool embedded_mtp);
+void validate_options(int ctx_size, const std::string& custom_args, int parallel, bool embedded_mtp,
+                      const std::string& family = "qwen");
 std::unique_ptr<WrappedServer> create(const BackendContext& ctx);
 const BackendSpec* spec();
 const BackendOps* ops();

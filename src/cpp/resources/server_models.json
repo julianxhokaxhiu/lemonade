@@ -3129,7 +3129,7 @@
             "family": "coder",
             "model": "IQ1_M",
             "backends": ["cuda", "rocm", "sycl"],
-            "revision": "5348543e0147355ac9cbcb031184a3546350988e"
+            "revision": "bba88856f8c3c0c9e40e45f82d05e228b814ac43"
         }
     },
     "Qwen3.8-Flash-Next-Unsloth-UD-IQ4_XS-Strata": {
@@ -3442,6 +3442,123 @@
                 "ple": "640a1db97446ddd5e89d2b70ecd0297987192c93",
                 "embd": "640a1db97446ddd5e89d2b70ecd0297987192c93"
             }
+        }
+    },
+    "Hy4-Flash-SQ-64-Strata": {
+        "checkpoints": {
+            "main": "strata-engine/Hy4-Flash-Strata:Hy4-Flash-SQ-64.strata",
+            "engram": "strata-engine/Hy4-Flash-Strata:Hy4-Flash-Engram-Q8.strata",
+            "vision": "strata-engine/Hy4-Flash-Strata:Hy4-Flash-Vision.strata"
+        },
+        "recipe": "strata",
+        "suggested": true,
+        "labels": ["chat", "reasoning", "tool-calling", "vision"],
+        "size": 130.5,
+        "min_resident_gb": 6,
+        "strata": {
+            "family": "hy4",
+            "model": "SQ-64",
+            "format": "ready",
+            "backends": ["cuda", "rocm", "sycl", "metal"],
+            "revision": "995bac227ab7e0d221772be641e2b5954a9fac06"
+        }
+    },
+    "Hy4-Flash-SQ-96-Strata": {
+        "checkpoints": {
+            "main": "strata-engine/Hy4-Flash-Strata:Hy4-Flash-SQ-96.strata",
+            "engram": "strata-engine/Hy4-Flash-Strata:Hy4-Flash-Engram-Q8.strata",
+            "vision": "strata-engine/Hy4-Flash-Strata:Hy4-Flash-Vision.strata"
+        },
+        "recipe": "strata",
+        "suggested": true,
+        "labels": ["chat", "reasoning", "tool-calling", "vision"],
+        "size": 158.1,
+        "min_resident_gb": 7,
+        "strata": {
+            "family": "hy4",
+            "model": "SQ-96",
+            "format": "ready",
+            "backends": ["cuda", "rocm", "sycl", "metal"],
+            "revision": "995bac227ab7e0d221772be641e2b5954a9fac06"
+        }
+    },
+    "Hy4-Flash-SQ-128-Strata": {
+        "checkpoints": {
+            "main": "strata-engine/Hy4-Flash-Strata:Hy4-Flash-SQ-128.strata",
+            "engram": "strata-engine/Hy4-Flash-Strata:Hy4-Flash-Engram-Q8.strata",
+            "vision": "strata-engine/Hy4-Flash-Strata:Hy4-Flash-Vision.strata"
+        },
+        "recipe": "strata",
+        "suggested": true,
+        "labels": ["chat", "reasoning", "tool-calling", "vision"],
+        "size": 182.2,
+        "min_resident_gb": 8,
+        "strata": {
+            "family": "hy4",
+            "model": "SQ-128",
+            "format": "ready",
+            "backends": ["cuda", "rocm", "sycl", "metal"],
+            "revision": "995bac227ab7e0d221772be641e2b5954a9fac06"
+        }
+    },
+    "Inkling-2-Mini-SQ-10-Strata": {
+        "checkpoints": {
+            "main": "strata-engine/Inkling-2-Mini-Strata:Inkling-2-Mini-SQ-10.strata",
+            "vision": "strata-engine/Inkling-2-Mini-Strata:Inkling-2-Mini-Vision.strata",
+            "tokenizer": "strata-engine/Inkling-2-Mini-Strata:tokenizer.json",
+            "chat_template": "strata-engine/Inkling-2-Mini-Strata:chat_template.jinja"
+        },
+        "recipe": "strata",
+        "suggested": true,
+        "labels": ["chat", "tool-calling", "vision"],
+        "size": 11.1,
+        "min_resident_gb": 2,
+        "strata": {
+            "family": "inkling",
+            "model": "SQ-10",
+            "format": "ready",
+            "backends": ["cuda", "rocm", "sycl", "metal"],
+            "revision": "04996a1e2c45009b6a04f2af126cb6bdb2ba3587"
+        }
+    },
+    "Inkling-2-Mini-SQ-15-Strata": {
+        "checkpoints": {
+            "main": "strata-engine/Inkling-2-Mini-Strata:Inkling-2-Mini-SQ-15.strata",
+            "vision": "strata-engine/Inkling-2-Mini-Strata:Inkling-2-Mini-Vision.strata",
+            "tokenizer": "strata-engine/Inkling-2-Mini-Strata:tokenizer.json",
+            "chat_template": "strata-engine/Inkling-2-Mini-Strata:chat_template.jinja"
+        },
+        "recipe": "strata",
+        "suggested": true,
+        "labels": ["chat", "tool-calling", "vision"],
+        "size": 15.0,
+        "min_resident_gb": 3,
+        "strata": {
+            "family": "inkling",
+            "model": "SQ-15",
+            "format": "ready",
+            "backends": ["cuda", "rocm", "sycl", "metal"],
+            "revision": "04996a1e2c45009b6a04f2af126cb6bdb2ba3587"
+        }
+    },
+    "Inkling-2-Mini-SQ-20-Strata": {
+        "checkpoints": {
+            "main": "strata-engine/Inkling-2-Mini-Strata:Inkling-2-Mini-SQ-20.strata",
+            "vision": "strata-engine/Inkling-2-Mini-Strata:Inkling-2-Mini-Vision.strata",
+            "tokenizer": "strata-engine/Inkling-2-Mini-Strata:tokenizer.json",
+            "chat_template": "strata-engine/Inkling-2-Mini-Strata:chat_template.jinja"
+        },
+        "recipe": "strata",
+        "suggested": true,
+        "labels": ["chat", "tool-calling", "vision"],
+        "size": 20.0,
+        "min_resident_gb": 4,
+        "strata": {
+            "family": "inkling",
+            "model": "SQ-20",
+            "format": "ready",
+            "backends": ["cuda", "rocm", "sycl", "metal"],
+            "revision": "04996a1e2c45009b6a04f2af126cb6bdb2ba3587"
         }
     },
     "Qwen3.6-35B-A3B-UD-Q6_K_XL-Strata": {

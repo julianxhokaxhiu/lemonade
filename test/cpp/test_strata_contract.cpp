@@ -3,6 +3,9 @@
 #include "lemon/system_info.h"
 
 #include <cstdio>
+#include <filesystem>
+#include <fstream>
+#include <random>
 #include <stdexcept>
 #include <string>
 
@@ -29,6 +32,21 @@ int main() {
     const auto state = strata::ops()->classify_unavailable(unsupported_backend, install.error, "install");
     check("Unsupported Strata platforms remain unavailable even with a binary on disk",
           !install.installed && state && state->state == "unsupported" && !state->message.empty());
+    const auto checkpoint_path = std::filesystem::temp_directory_path() /
+        ("strata-contract-" + std::to_string(std::random_device{}()) + ".strata");
+    {
+        std::ofstream file(checkpoint_path, std::ios::binary);
+        file << "invalid";
+    }
+    check("Truncated Strata checkpoint headers are rejected",
+          !strata::ops()->validate_checkpoint_file(checkpoint_path.string()).empty());
+    {
+        std::ofstream file(checkpoint_path, std::ios::binary);
+        file.write("STRATA\0\1", 8);
+    }
+    check("Native Strata checkpoint headers are accepted",
+          strata::ops()->validate_checkpoint_file(checkpoint_path.string()).empty());
+    std::filesystem::remove(checkpoint_path);
     const lemon::json release_assets = {
         {"strata-engine-9.8.7-windows-x86_64-hip-rx9070.tar.gz", "sha256:" + std::string(64, 'a')}};
     check("Windows name detection selects the qualified RDNA4 archive",
@@ -71,6 +89,16 @@ int main() {
     check("ARM64 GB10 retains its CUDA 13 bundle",
           strata::engine_asset("linux-aarch64", "cuda", "sm_121", cuda_assets) ==
               "strata-engine-9.8.7-linux-aarch64-cuda-cuda13.tar.gz");
+    const lemon::json shape_assets = {
+        {"strata-engine-9.8.7-windows-x86_64-hip-rdna3.tar.gz", "sha256:" + std::string(64, 'a')},
+        {"strata-hy4-9.8.6-windows-x86_64-hip-strix.tar.gz", "sha256:" + std::string(64, 'b')},
+        {"strata-inkling-9.8.7-windows-x86_64-hip-strix.tar.gz", "sha256:" + std::string(64, 'c')}};
+    for (const std::string family : {"hy4", "inkling"}) {
+        check("Shape engines select their own Strix Halo packages rather than Qwen",
+              strata::engine_asset("windows-x86_64", "rocm", "gfx1151", shape_assets, family) ==
+                  "strata-" + family + (family == "hy4" ? "-9.8.6" : "-9.8.7") +
+                  "-windows-x86_64-hip-strix.tar.gz");
+    }
     try {
         strata::engine_asset("windows-x86_64", "cuda", "", release_assets);
         check("Missing Strata release assets fail explicitly", false);
@@ -150,6 +178,29 @@ int main() {
         check("Ready-pack options accept a custom MTP pack", true);
     } catch (const std::invalid_argument&) {
         check("Ready-pack options accept a custom MTP pack", false);
+    }
+    try {
+        strata::validate_options(1048576, "", 64, false, "inkling");
+        check("Inkling supports 64 concurrent slots", true);
+    } catch (const std::invalid_argument&) {
+        check("Inkling supports 64 concurrent slots", false);
+    }
+    for (const std::string family : {"qwen", "hy4", "inkling"}) {
+        try {
+            strata::validate_options(32768, "", family == "qwen" ? 9 : family == "hy4" ? 2 : 65,
+                                     false, family);
+            check("Parallelism exceeding the selected engine's limit fails explicitly", false);
+        } catch (const std::invalid_argument&) {
+            check("Parallelism exceeding the selected engine's limit fails explicitly", true);
+        }
+    }
+    for (const std::string args : {"--parallel 64", "--engram custom.strata", "--native-dense-gguf custom.gguf"}) {
+        try {
+            strata::validate_options(32768, args, 1, false);
+            check("Custom arguments cannot replace managed model files or parallelism", false);
+        } catch (const std::invalid_argument&) {
+            check("Custom arguments cannot replace managed model files or parallelism", true);
+        }
     }
     return failures ? 1 : 0;
 }
