@@ -1,3 +1,4 @@
+#include "lemon/backends/backend_registry.h"
 #include "lemon/model_manager.h"
 #include "lemon/server/api_route.h"
 #include "lemon/server/model_json.h"
@@ -84,6 +85,7 @@ public:
         response["object"] = "list";
 
         for (const auto& [row_id, model_info] : ctx_.model_manager->listing_rows(models)) {
+            if (!backends::ops_for(model_info->recipe)->model_visible(*model_info)) continue;
             response["data"].push_back(
                 ctx_.model_json->to_json(row_id, *model_info, 0, include_paths));
         }

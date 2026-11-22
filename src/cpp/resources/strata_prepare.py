@@ -41,13 +41,22 @@ def ple_shard(control, files):
     raise ValueError(f"No per_layer_token_embd.weight tensor in {files[0]}'s shards")
 
 
-def prepare_mtp(setup, control, cache, offline=False):
+def prepare_mtp(setup, control, cache, offline=False, metal=False):
     runtime = cache / "rt"
     marker = cache / ".lemonade-ready"
-    files = ("dense.bin", "dense.txt", "experts.bin", "draft_vocab.bin")
-    if not marker.is_file() or not all(
-        (runtime / name).is_file() and (runtime / name).stat().st_size > 0
-        for name in files
+    gguf = cache / "mtp-q2_0.gguf"
+    files = (
+        ("draft_vocab.bin",)
+        if metal
+        else ("dense.bin", "dense.txt", "experts.bin", "draft_vocab.bin")
+    )
+    if (
+        not marker.is_file()
+        or (metal and (not gguf.is_file() or gguf.stat().st_size == 0))
+        or not all(
+            (runtime / name).is_file() and (runtime / name).stat().st_size > 0
+            for name in files
+        )
     ):
         if offline:
             raise RuntimeError(
@@ -58,20 +67,25 @@ def prepare_mtp(setup, control, cache, offline=False):
             "Preparing the shared Strata MTP draft layer (about 5.2 GB to download).",
             flush=True,
         )
-        setup.fetch_mtp(cache, os.environ.copy())
-        os.environ["STRATA_GGUF_PY"] = str(setup.get_llama_cpp() / "gguf-py")
-        gguf = cache / "mtp-q2_0.gguf"
-        run_tool(
-            control,
-            "tools/mtp_pack.py",
-            "--src",
-            cache,
-            "--experts",
-            "q2_0",
-            "--out",
-            gguf,
-        )
-        run_tool(control, "tools/mtp_rt.py", "--gguf", gguf, "--out", runtime)
+        if not gguf.is_file() or gguf.stat().st_size == 0:
+            if setup.fetch_mtp(cache, os.environ.copy()) is False:
+                raise RuntimeError("Strata MTP draft layer could not be downloaded")
+            run_tool(
+                control,
+                "tools/mtp_pack.py",
+                "--src",
+                cache,
+                "--experts",
+                "q2_0",
+                "--out",
+                gguf,
+            )
+        if not gguf.is_file() or gguf.stat().st_size == 0:
+            raise RuntimeError("Strata MTP preparation did not produce its GGUF layer")
+        if metal:
+            runtime.mkdir(parents=True, exist_ok=True)
+        else:
+            run_tool(control, "tools/mtp_rt.py", "--gguf", gguf, "--out", runtime)
         setup.refresh_draft_vocab(runtime)
         if not all(
             (runtime / name).is_file() and (runtime / name).stat().st_size > 0
@@ -84,11 +98,106 @@ def prepare_mtp(setup, control, cache, offline=False):
     return runtime
 
 
+def prepare_drafting(setup, control, request, cfg, args, extra, family):
+    from strata_control import drafting, drafting_fetch
+
+    parser = argparse.ArgumentParser(add_help=False, allow_abbrev=False)
+    parser.add_argument("--mtp", default="auto")
+    parser.add_argument("--spec", type=int, default=4)
+    options, remaining = parser.parse_known_args(extra)
+    mode = request.get("drafting", "auto")
+    if options.mtp == "off" or options.spec <= 0:
+        mode = "off"
+    elif options.mtp != "auto":
+        args += ["--mtp", options.mtp]
+        cfg["drafting"] = "mtp"
+        return remaining + (["--spec", str(options.spec)] if "--spec" in extra else [])
+    backend, archs = drafting.hardware_for(cfg["backend"])
+    name = cfg["model_name"]
+    wanted = drafting.choice_of(
+        mode, model_name=name, family=family, backend=backend, archs=archs, args=args
+    )
+    blocked = drafting.blocked_by(
+        extra, slots=request["parallel"], named=mode == "dflash2", backend=backend
+    )
+    if mode == "dflash2" and (wanted != "dflash2" or blocked):
+        raise ValueError("DFlash2 is not supported for this model/backend/parallelism")
+    cfg["drafting"] = mode
+    if wanted == "off":
+        return remaining + (["--spec", str(options.spec)] if "--spec" in extra else [])
+    if wanted == "dflash2" and not blocked:
+        data = drafting.data_dir_of(args)
+        if data is None:
+            raise RuntimeError("Cannot locate the Strata drafter cache")
+        if request["offline"] and not drafting.drafter_ready(data, name, backend):
+            raise RuntimeError(
+                "Strata DFlash2 is not prepared while offline; "
+                "prepare it online first or select off"
+            )
+        if not request["offline"]:
+            drafter = drafting_fetch.ensure_for(
+                data,
+                model_name=name,
+                backend=backend,
+                archs=archs,
+                args=args,
+                feed="https://github.com/Niko1221/Strata/releases/download/"
+                + request["version"]
+                + "/strata-feed.json",
+            )
+            if drafter is None:
+                raise RuntimeError("Strata DFlash2 drafter could not be downloaded")
+        if drafting.provide_vocab(data) is None:
+            raise RuntimeError("Strata DFlash2 draft vocabulary is missing")
+    else:
+        args += [
+            "--mtp",
+            str(
+                prepare_mtp(
+                    setup,
+                    control,
+                    Path(request["mtp_cache"]),
+                    offline=request["offline"],
+                    metal=backend == "metal",
+                )
+            ),
+        ]
+    return remaining + (["--spec", str(options.spec)] if "--spec" in extra else [])
+
+
+def prepare_inkling_drafting(cfg, cache, offline):
+    from serve import inkling_kind
+    from serve.server import child_env
+    from strata_control import atomic, inkling_probe
+
+    record = cache / "drafting.json"
+    if record.is_file():
+        cfg["drafting_probe"] = json.loads(record.read_text(encoding="utf-8"))
+    if inkling_kind.needs_drafting_probe(cfg):
+        print(
+            "Measuring Inkling drafting speed for this setup (two short runs).",
+            flush=True,
+        )
+        inkling_probe.probe_run_config(
+            cfg,
+            cfg["exe"],
+            inkling_kind.engine_args(cfg, cfg["exe"], announce=False),
+            env=child_env(cfg, offline=offline),
+            cwd=cfg["cwd"],
+        )
+        atomic.write_text(record, json.dumps(cfg["drafting_probe"]) + "\n")
+    print(inkling_probe.note(cfg), flush=True)
+
+
 def prepare(setup, control, request):
     selection = request["selection"]
     family, model = selection["family"], selection["model"]
     backend, context = request["backend"], request["context"]
-    if family not in setup.FAMILIES and family not in setup.OWN_PATH_FAMILIES:
+    if (
+        family not in setup.FAMILIES
+        and family not in setup.OWN_PATH_FAMILIES
+        and family not in ("hy4", "inkling")
+    ):
         raise ValueError(f"Unsupported Qwen engine family: {family}")
     if backend not in selection["backends"]:
         raise ValueError(f"{family}/{model} does not support {backend}")
@@ -113,8 +222,36 @@ def prepare(setup, control, request):
         ],
         "backend": {"rocm": "hip"}.get(backend, backend),
         "parallel": request["parallel"],
+        "drafting": request.get("drafting", "auto"),
     }
-    if family in setup.OWN_PATH_FAMILIES:
+    if family == "inkling" and "dflash2" in paths:
+        cfg["env"] = {"STRATA_INK_DFLASH2": str(paths["dflash2"])}
+    if family in ("hy4", "inkling"):
+        sys.path.insert(0, str(control / "tools"))
+        tokenizer = pack / "tokenizer"
+        if family == "hy4":
+            tokenizer = setup.hy4_tokenizer_dir(
+                source, tokenizer, Path(request["executable"])
+            )
+            if tokenizer is None:
+                raise RuntimeError("Strata Hy4-Flash tokenizer could not be extracted")
+            args = ["--native", str(source), "--engram", str(paths["engram"])]
+            cfg["arch"] = "hy4flash"
+        else:
+            import inkling_tokenizer
+
+            inkling_tokenizer.convert_files(
+                paths["tokenizer"], paths["chat_template"], tokenizer
+            )
+            args = ["--native", str(source)]
+            cfg["arch"] = "inkling2_loop"
+        if "vision" in paths:
+            args += ["--vision", str(paths["vision"])]
+        args += ["--max-context", str(context)]
+        if cfg["drafting"] == "off":
+            args += ["--draft", "off"]
+        cfg["tokenizer"] = str(tokenizer)
+    elif family in setup.OWN_PATH_FAMILIES:
         if not marker.is_file() or not (pack / "tokenizer" / "vocab.json").is_file():
             run_tool(
                 control, "tools/strata_tokenizer.py", "--gguf", source, "--out", pack
@@ -136,13 +273,13 @@ def prepare(setup, control, request):
         ]
     else:
         definition = setup.FAMILIES[family]
+        cfg["model_name"] = f"{definition['name']}-{model.lower()}"
         shards = [source]
         if not definition.get("ready"):
             shards += [
                 paths[f"shard_{i}"]
                 for i in range(2, setup.model_shards(definition, model) + 1)
             ]
-            ple = ple_shard(control, shards)
         if definition.get("ready"):
             pack = source
             args = [
@@ -158,6 +295,7 @@ def prepare(setup, control, request):
                 str(paths["embd"]),
             ]
         else:
+            ple = ple_shard(control, shards)
             native = pack / "model-metal.gguf" if backend == "metal" else source
             if backend == "metal" and not native.is_file():
                 run_tool(
@@ -173,7 +311,6 @@ def prepare(setup, control, request):
                 not marker.is_file()
                 or not (pack / "tokenizer" / "vocab.json").is_file()
             ):
-                os.environ["STRATA_GGUF_PY"] = str(setup.get_llama_cpp() / "gguf-py")
                 run_tool(
                     control,
                     "tools/iq_pack.py",
@@ -207,6 +344,23 @@ def prepare(setup, control, request):
             cfg["env"] = {"STRATA_METAL_STREAM": "1"}
         else:
             args += ["--spec-min-p", "0.5"]
+        amd_gpus = [gpu for gpu in request.get("amd_gpu", []) if gpu.get("available")]
+        expert_modes = {
+            "--mmap-experts",
+            "--resident-experts",
+            "--resident-cpu-experts",
+            "--resident-budget-gib",
+            "--ram-experts-gb",
+            "--ssd-experts",
+            "--shared-expert-arena",
+        }
+        if (
+            backend == "rocm"
+            and amd_gpus
+            and all(gpu.get("integrated", False) for gpu in amd_gpus)
+            and not expert_modes.intersection(extra)
+        ):
+            args += ["--mmap-experts"]
         if backend != "metal":
             parser = argparse.ArgumentParser(add_help=False, allow_abbrev=False)
             parser.add_argument("--kv", default="int8" if context > 8192 else "fp16")
@@ -223,31 +377,13 @@ def prepare(setup, control, request):
                 else ["--stream-experts"]
             )
             args += ["--vram-reserve-mib", "1024" if context <= 32768 else "2048"]
-        parser = argparse.ArgumentParser(add_help=False, allow_abbrev=False)
-        parser.add_argument("--mtp", default="auto")
-        draft, extra = parser.parse_known_args(extra)
-        if draft.mtp not in ("auto", "off"):
-            args += ["--mtp", draft.mtp]
-        elif backend != "metal" and draft.mtp == "auto":
-            parser = argparse.ArgumentParser(add_help=False, allow_abbrev=False)
-            parser.add_argument("--spec", type=int, default=4)
-            speculation, _ = parser.parse_known_args(extra)
-            if speculation.spec > 0:
-                args += [
-                    "--mtp",
-                    str(
-                        prepare_mtp(
-                            setup,
-                            control,
-                            Path(request["mtp_cache"]),
-                            offline=request["offline"],
-                        )
-                    ),
-                ]
-    if "--chunk" in extra:
+        extra = prepare_drafting(setup, control, request, cfg, args, extra, family)
+    if "--chunk" in extra and "--prefill" in args:
         index = args.index("--prefill")
         del args[index : index + 2]
     cfg.update(args=args, user_args=extra)
+    if family == "inkling" and cfg["drafting"] == "auto":
+        prepare_inkling_drafting(cfg, pack, request["offline"])
     Path(request["config"]).write_text(
         json.dumps(cfg, indent=2) + "\n", encoding="utf-8"
     )

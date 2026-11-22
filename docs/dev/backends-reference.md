@@ -68,8 +68,8 @@ Each backend has a tier and a format; see [Backend Tiers and Formats](../api/lem
 | `sd-cpp` | vulkan | core | native | linux, windows | amd_gpu; cpu (x86_64); nvidia_gpu |
 | `sd-cpp` | rocm | core | native | linux, windows | amd_gpu (gfx103X, gfx110X, gfx1150, gfx1151, gfx1152, gfx120X) |
 | `sd-cpp` | cpu | core | native | linux, windows | cpu (x86_64) |
-| `strata` | cuda | experimental | python | linux, windows | nvidia_gpu (sm_120, sm_75, sm_86, sm_89) |
-| `strata` | rocm | experimental | python | linux, windows | amd_gpu (gfx1030, gfx1031, gfx1100, gfx1101, gfx1102, gfx1151, gfx1200, gfx1201) |
+| `strata` | cuda | experimental | python | linux, windows | nvidia_gpu (sm_120, sm_60, sm_61, sm_70, sm_75, sm_86, sm_89) |
+| `strata` | rocm | experimental | python | linux, windows | amd_gpu (gfx1030, gfx1031, gfx1032, gfx1100, gfx1101, gfx1102, gfx1103, gfx1150, gfx1151, gfx1200, gfx1201) |
 | `strata` | sycl | experimental | python | linux | intel_gpu (arc) |
 | `strata` | cuda | experimental | python | linux | nvidia_gpu (sm_121) |
 | `strata` | metal | experimental | python | macos | metal |
@@ -187,7 +187,8 @@ Each backend has a tier and a format; see [Backend Tiers and Formats](../api/lem
 |--------|----------|------|---------|-------------|
 | `ctx_size` | `--ctx-size` | SIZE | -1 | Context size for the model |
 | `strata_backend` | `--strata` | BACKEND | "" | Strata backend to use |
-| `strata_parallel` | `--strata-parallel` | SIZE | 1 | Concurrent Strata slots (1-8); each slot allocates its own context |
+| `strata_parallel` | `--strata-parallel` | SIZE | 1 | Concurrent slots: Qwen 1-8, Hy4-Flash 1, Inkling 1-64 |
+| `strata_drafting` | `--strata-drafting` | MODE | auto | Drafting mode: auto, mtp, dflash2, off; shape engines use their built-in drafter |
 | `strata_args` | `--strata-args` | ARGS | "" | Additional Strata engine arguments; model, context and serving mode are managed by Lemonade |
 
 #### `thenoise` — TheNoise
@@ -281,7 +282,29 @@ Lemonade launches `llama-server` with `--parallel 1` and leaves the upstream `--
 
 ### Strata (`strata`)
 
-Experimental; maintained by Julian Xhokaxhiu. Runs supported Qwen models using shared weights and Strata's bundled Python preparation tools/server. Engine and Control follow `backend_versions.json`; models are registered in `server_models.json`. Flash MTP (~5.2 GB on first load, `--mtp off` to disable), KV streaming and slot telemetry use upstream support. Memory filtering uses model-compatible devices, with system RAM for integrated AMD GPUs and Apple Silicon and the device memory pool otherwise.
+Experimental; maintained by Julian Xhokaxhiu. Runs supported Qwen, Hy4-Flash and Inkling 2 Mini models using shared weights and Strata's bundled Python preparation tools/server. Engine and Control follow `backend_versions.json`; models are registered in `server_models.json`. Strata 0.2.23 includes Control 0.1.70 and Inkling engines 0.1.70; Windows and macOS Qwen engines are 0.1.70, Linux Qwen engines are 0.1.69, and Hy4 engines remain 0.1.67. Since 0.2.21, Inkling gains improved multi-NVIDIA placement, tool-result handling, thinking-level support, and DFlash 2 instead of DSpark. The Windows Qwen engines also include the GGUF startup fix. Strata enables a faster path by default on selected GPUs, which can slightly change generated wording. The catalog follows Strata's five offered builds: SQ-20 v2, SQ-15, SQ-10, GSQ-RCO IQ3_S, and UD-Q4_K_XL.
+
+The Strata backend's Runtime dropdown sets the server-side `strata.runtime` configuration to `qwen` (default), `hy4`, or `inkling`, independently of `flm.runtime`. Runtime-specific version pins, model visibility, install checks and config-change effects are backend-owned policies exposed through `BackendOps`; the config coordinator performs unloading and cache invalidation. Qwen includes Qwen3.6 models. Model listings show only the selected runtime's families, and loading another family fails explicitly. Changing runtime unloads loaded Strata models and refreshes the model list; a managed engine for a different runtime is marked **Update required** and must be replaced using **Update** or `lemonade backends install strata:<backend>`. External executable overrides remain user-managed.
+
+For Qwen, Lemonade sets `STRATA_NO_AUTO_CONVERSATION_CACHE=1` and `STRATA_PLE_AUTO_RAM=0` only in the Strata server subprocess. This disables Control's pre-load cache-budget increase and prevents automatic PLE-table locking before the expert arena and GPU cache are allocated. The engine still sizes the conversation cache after loading. Explicit `--conversation-cache-mib N` and `--ple-io ram` values in `--strata-args` remain unchanged. Hy4-Flash and Inkling are unaffected. This is not a total-memory limit or a guarantee against host memory pressure.
+
+For Qwen families using the expert-pack path on ROCm hosts with only available integrated AMD GPUs, Lemonade defaults to `--mmap-experts`: experts are read from the existing model files rather than held in a permanent host arena alongside the shared-memory GPU cache. File-backed pages remain reclaimable, but prefill or cache misses may require disk reads. Explicit expert-storage options in `--strata-args`, discrete or hybrid AMD GPU hosts, and Qwen3.6's separate native path are unchanged.
+
+Published Qwen and Hy4 engines do not support `gfx1150`; Inkling does. Qwen also has no `gfx1103` prebuilt. Lemonade excludes those incompatible prebuilt choices unless a custom engine path is configured.
+
+The `qwen` runtime includes the registered `qwen`, `qwen36`, `unsloth`, `coder`, `gyro`, `swift`, and `nvfp4` preparation families. Hy4 and Inkling remain separate runtimes. Device and memory filtering still apply; NVFP4 models require CUDA.
+
+For a custom Strata Qwen engine, set `strata.runtime=qwen`, `strata.backend=rocm`, and `strata.rocm_bin=/opt/strata-engine/strata`. Model loading uses this executable without installing or updating Strata. Prepare the matching upstream Python Control bundle separately in `<lemonade-home>/bin/strata/rocm/control/`, with a valid `version.txt` in `<lemonade-home>/bin/strata/rocm/`. Missing Control files remain an error. Other backends retain normal downloads; explicit Strata backend installation commands are unchanged.
+
+Executable lookup prefers the install-root native engine over nested same-named files. Strata Control includes a `control/bin/strata` CLI wrapper, which must not be selected as the Qwen inference engine.
+
+The backend registry resolves the install spec at lookup time so installation and executable discovery follow the currently selected runtime, including changes made after server startup.
+
+`--strata-drafting auto|mtp|dflash2|off` selects Qwen drafting using upstream compatibility rules. DFlash2 preparation uses the pinned release's verified packs and vocabulary; Flash MTP downloads about 5.2 GB on first load when selected, using the GGUF draft layer directly on Metal and a runtime pack elsewhere. `--strata-args "--mtp off"` remains supported. Hy4-Flash and Inkling use their built-in DFly2 and DFlash 2 drafters, respectively (`auto` or `off`), and their catalog entries include the vision companion. Inkling's DFlash 2 checkpoint is passed to the engine through its supported `STRATA_INK_DFLASH2` override. Qwen supports 1-8 concurrent slots, Hy4-Flash one, and Inkling 1-64. Unsupported drafting/parallelism combinations fail explicitly. Offline loads require the selected engine and drafter to be prepared already.
+
+KV streaming and slot telemetry use upstream support. Memory filtering uses model-compatible devices, with system RAM for integrated AMD GPUs and Apple Silicon and the device memory pool otherwise. The new hybrid models' minimum resident sizes are admission floors, not guarantees that every context/parallelism/vision combination fits the GPU.
+
+For Hy4-Flash and Inkling, `--strata-drafting off` passes an explicit `--draft off` to the engine; `auto` retains upstream drafter selection. Inkling measures drafting speed with two short runs on first load, which can add about three minutes. The decision is cached with the prepared model and remeasured when upstream detects a different placement. When the engine reports speculative activity, chat responses include `timings.draft_n` (drafts offered) and `timings.draft_n_accepted` (drafts accepted). The Strata benchmark records these as `drafts_offered` and `drafts_accepted` per request in `results.json`. Positive offered counts confirm activity, while accepted/offered measures acceptance, not speedup. Missing counters mean activity was not reported; zero counts can occur when a request does not use speculation. Lemonade's `/stats` endpoint does not currently expose these counters.
 
 To upgrade Strata, bump its release pins. Exact asset names and hashes come from that release's checksum and Control install manifests, cached in memory without GitHub API lookups. A complete pinned install can be reused on metadata fetch failure unless installation is forced.
 

@@ -3911,7 +3911,7 @@
             "family": "coder",
             "model": "IQ1_M",
             "backends": ["cuda", "rocm", "sycl"],
-            "revision": "5348543e0147355ac9cbcb031184a3546350988e"
+            "revision": "bba88856f8c3c0c9e40e45f82d05e228b814ac43"
         }
     },
     "Qwen3.8-Flash-Next-Unsloth-UD-IQ4_XS-Strata": {
@@ -4223,6 +4223,441 @@
                 "dense": "cca8f7fee5ce0af932097340a75e06df25c4e57d",
                 "ple": "640a1db97446ddd5e89d2b70ecd0297987192c93",
                 "embd": "640a1db97446ddd5e89d2b70ecd0297987192c93"
+            }
+        }
+    },
+    "Hy4-Flash-SQ-64-Strata": {
+        "checkpoints": {
+            "main": "strata-engine/Hy4-Flash-Strata:Hy4-Flash-SQ-64.strata",
+            "engram": "strata-engine/Hy4-Flash-Strata:Hy4-Flash-Engram-Q8.strata",
+            "vision": "strata-engine/Hy4-Flash-Strata:Hy4-Flash-Vision.strata"
+        },
+        "recipe": "strata",
+        "suggested": true,
+        "labels": ["chat", "reasoning", "tool-calling", "vision"],
+        "size": 130.5,
+        "min_resident_gb": 6,
+        "strata": {
+            "family": "hy4",
+            "model": "SQ-64",
+            "format": "ready",
+            "backends": ["cuda", "rocm", "sycl", "metal"],
+            "revision": "995bac227ab7e0d221772be641e2b5954a9fac06"
+        }
+    },
+    "Hy4-Flash-SQ-96-Strata": {
+        "checkpoints": {
+            "main": "strata-engine/Hy4-Flash-Strata:Hy4-Flash-SQ-96.strata",
+            "engram": "strata-engine/Hy4-Flash-Strata:Hy4-Flash-Engram-Q8.strata",
+            "vision": "strata-engine/Hy4-Flash-Strata:Hy4-Flash-Vision.strata"
+        },
+        "recipe": "strata",
+        "suggested": true,
+        "labels": ["chat", "reasoning", "tool-calling", "vision"],
+        "size": 158.1,
+        "min_resident_gb": 7,
+        "strata": {
+            "family": "hy4",
+            "model": "SQ-96",
+            "format": "ready",
+            "backends": ["cuda", "rocm", "sycl", "metal"],
+            "revision": "995bac227ab7e0d221772be641e2b5954a9fac06"
+        }
+    },
+    "Hy4-Flash-SQ-128-Strata": {
+        "checkpoints": {
+            "main": "strata-engine/Hy4-Flash-Strata:Hy4-Flash-SQ-128.strata",
+            "engram": "strata-engine/Hy4-Flash-Strata:Hy4-Flash-Engram-Q8.strata",
+            "vision": "strata-engine/Hy4-Flash-Strata:Hy4-Flash-Vision.strata"
+        },
+        "recipe": "strata",
+        "suggested": true,
+        "labels": ["chat", "reasoning", "tool-calling", "vision"],
+        "size": 182.2,
+        "min_resident_gb": 8,
+        "strata": {
+            "family": "hy4",
+            "model": "SQ-128",
+            "format": "ready",
+            "backends": ["cuda", "rocm", "sycl", "metal"],
+            "revision": "995bac227ab7e0d221772be641e2b5954a9fac06"
+        }
+    },
+    "Inkling-2-Mini-SQ-10-Strata": {
+        "checkpoints": {
+            "main": "strata-engine/Inkling-2-Mini-Strata:Inkling-2-Mini-SQ-10.strata",
+            "dflash2": "incoai/Inkling-2-Mini-DFlash2:model.safetensors",
+            "vision": "strata-engine/Inkling-2-Mini-Strata:Inkling-2-Mini-Vision-v2.strata",
+            "tokenizer": "strata-engine/Inkling-2-Mini-Strata:tokenizer.json",
+            "chat_template": "strata-engine/Inkling-2-Mini-Strata:chat_template.jinja"
+        },
+        "recipe": "strata",
+        "suggested": true,
+        "labels": ["chat", "tool-calling", "vision"],
+        "size": 10.47,
+        "min_resident_gb": 2,
+        "strata": {
+            "family": "inkling",
+            "model": "SQ-10",
+            "format": "ready",
+            "backends": ["cuda", "rocm", "sycl", "metal"],
+            "revisions": {
+                "main": "5623ceb47d7a01db827460ce1c23e7818a75661b",
+                "dflash2": "4f9088ea66c21f2b99ed657d1941c306b03e84d2",
+                "vision": "5623ceb47d7a01db827460ce1c23e7818a75661b",
+                "tokenizer": "5623ceb47d7a01db827460ce1c23e7818a75661b",
+                "chat_template": "5623ceb47d7a01db827460ce1c23e7818a75661b"
+            }
+        }
+    },
+    "Inkling-2-Mini-SQ-15-Strata": {
+        "checkpoints": {
+            "main": "strata-engine/Inkling-2-Mini-Strata:Inkling-2-Mini-SQ-15.strata",
+            "dflash2": "incoai/Inkling-2-Mini-DFlash2:model.safetensors",
+            "vision": "strata-engine/Inkling-2-Mini-Strata:Inkling-2-Mini-Vision-v2.strata",
+            "tokenizer": "strata-engine/Inkling-2-Mini-Strata:tokenizer.json",
+            "chat_template": "strata-engine/Inkling-2-Mini-Strata:chat_template.jinja"
+        },
+        "recipe": "strata",
+        "suggested": true,
+        "labels": ["chat", "tool-calling", "vision"],
+        "size": 14.35,
+        "min_resident_gb": 3,
+        "strata": {
+            "family": "inkling",
+            "model": "SQ-15",
+            "format": "ready",
+            "backends": ["cuda", "rocm", "sycl", "metal"],
+            "revisions": {
+                "main": "5623ceb47d7a01db827460ce1c23e7818a75661b",
+                "dflash2": "4f9088ea66c21f2b99ed657d1941c306b03e84d2",
+                "vision": "5623ceb47d7a01db827460ce1c23e7818a75661b",
+                "tokenizer": "5623ceb47d7a01db827460ce1c23e7818a75661b",
+                "chat_template": "5623ceb47d7a01db827460ce1c23e7818a75661b"
+            }
+        }
+    },
+    "Inkling-2-Mini-SQ-20-Strata": {
+        "checkpoints": {
+            "main": "strata-engine/Inkling-2-Mini-Strata:Inkling-2-Mini-SQv2-20.strata",
+            "dflash2": "incoai/Inkling-2-Mini-DFlash2:model.safetensors",
+            "vision": "strata-engine/Inkling-2-Mini-Strata:Inkling-2-Mini-Vision-v2.strata",
+            "tokenizer": "strata-engine/Inkling-2-Mini-Strata:tokenizer.json",
+            "chat_template": "strata-engine/Inkling-2-Mini-Strata:chat_template.jinja"
+        },
+        "recipe": "strata",
+        "suggested": true,
+        "labels": ["chat", "tool-calling", "vision"],
+        "size": 19.37,
+        "min_resident_gb": 4,
+        "strata": {
+            "family": "inkling",
+            "model": "SQ-20",
+            "format": "ready",
+            "backends": ["cuda", "rocm", "sycl", "metal"],
+            "revisions": {
+                "main": "5623ceb47d7a01db827460ce1c23e7818a75661b",
+                "dflash2": "4f9088ea66c21f2b99ed657d1941c306b03e84d2",
+                "vision": "5623ceb47d7a01db827460ce1c23e7818a75661b",
+                "tokenizer": "5623ceb47d7a01db827460ce1c23e7818a75661b",
+                "chat_template": "5623ceb47d7a01db827460ce1c23e7818a75661b"
+            }
+        }
+    },
+    "Inkling-2-Mini-GSQ-RCO-IQ3_S-Strata": {
+        "checkpoints": {
+            "main": "ISTA-DASLab/Inkling-2-Mini-GSQ-RCO-GGUF:Inkling-2-Mini-GSQ-RCO-IQ3_S.gguf",
+            "dflash2": "incoai/Inkling-2-Mini-DFlash2:model.safetensors",
+            "vision": "strata-engine/Inkling-2-Mini-Strata:Inkling-2-Mini-Vision-v2.strata",
+            "tokenizer": "strata-engine/Inkling-2-Mini-Strata:tokenizer.json",
+            "chat_template": "strata-engine/Inkling-2-Mini-Strata:chat_template.jinja"
+        },
+        "recipe": "strata",
+        "suggested": true,
+        "labels": ["chat", "tool-calling", "vision", "reasoning"],
+        "size": 11.43,
+        "min_resident_gb": 2,
+        "strata": {
+            "family": "inkling",
+            "model": "GSQ-RCO-IQ3_S",
+            "format": "gguf",
+            "backends": ["cuda", "rocm", "sycl", "metal"],
+            "revisions": {
+                "main": "357051619a8805c032e58a9976cea9bddb0832cd",
+                "dflash2": "4f9088ea66c21f2b99ed657d1941c306b03e84d2",
+                "vision": "5623ceb47d7a01db827460ce1c23e7818a75661b",
+                "tokenizer": "5623ceb47d7a01db827460ce1c23e7818a75661b",
+                "chat_template": "5623ceb47d7a01db827460ce1c23e7818a75661b"
+            }
+        }
+    },
+    "Inkling-2-Mini-UD-Q8_K_XL-Strata": {
+        "checkpoints": {
+            "main": "unsloth/Inkling-2-Mini-GGUF:Inkling-2-Mini-UD-Q8_K_XL.gguf",
+            "dflash2": "incoai/Inkling-2-Mini-DFlash2:model.safetensors",
+            "vision": "strata-engine/Inkling-2-Mini-Strata:Inkling-2-Mini-Vision-v2.strata",
+            "tokenizer": "strata-engine/Inkling-2-Mini-Strata:tokenizer.json",
+            "chat_template": "strata-engine/Inkling-2-Mini-Strata:chat_template.jinja"
+        },
+        "recipe": "strata",
+        "suggested": false,
+        "labels": ["chat", "tool-calling", "vision"],
+        "size": 23.9,
+        "min_resident_gb": 3,
+        "strata": {
+            "family": "inkling",
+            "model": "UD-Q8_K_XL",
+            "format": "gguf",
+            "backends": ["cuda", "rocm", "sycl", "metal"],
+            "revisions": {
+                "main": "800c946d7b9c830c86290df49afbbe91db8455f5",
+                "dflash2": "4f9088ea66c21f2b99ed657d1941c306b03e84d2",
+                "vision": "5623ceb47d7a01db827460ce1c23e7818a75661b",
+                "tokenizer": "5623ceb47d7a01db827460ce1c23e7818a75661b",
+                "chat_template": "5623ceb47d7a01db827460ce1c23e7818a75661b"
+            }
+        }
+    },
+    "Inkling-2-Mini-UD-Q4_K_XL-Strata": {
+        "checkpoints": {
+            "main": "unsloth/Inkling-2-Mini-GGUF:Inkling-2-Mini-UD-Q4_K_XL.gguf",
+            "dflash2": "incoai/Inkling-2-Mini-DFlash2:model.safetensors",
+            "vision": "strata-engine/Inkling-2-Mini-Strata:Inkling-2-Mini-Vision-v2.strata",
+            "tokenizer": "strata-engine/Inkling-2-Mini-Strata:tokenizer.json",
+            "chat_template": "strata-engine/Inkling-2-Mini-Strata:chat_template.jinja"
+        },
+        "recipe": "strata",
+        "suggested": true,
+        "labels": ["chat", "tool-calling", "vision"],
+        "size": 17.63,
+        "min_resident_gb": 3,
+        "strata": {
+            "family": "inkling",
+            "model": "UD-Q4_K_XL",
+            "format": "gguf",
+            "backends": ["cuda", "rocm", "sycl", "metal"],
+            "revisions": {
+                "main": "8078d149286eec7193795413b9e0643da6d11fa1",
+                "dflash2": "4f9088ea66c21f2b99ed657d1941c306b03e84d2",
+                "vision": "5623ceb47d7a01db827460ce1c23e7818a75661b",
+                "tokenizer": "5623ceb47d7a01db827460ce1c23e7818a75661b",
+                "chat_template": "5623ceb47d7a01db827460ce1c23e7818a75661b"
+            }
+        }
+    },
+    "Inkling-2-Mini-UD-Q4_K_M-Strata": {
+        "checkpoints": {
+            "main": "unsloth/Inkling-2-Mini-GGUF:Inkling-2-Mini-UD-Q4_K_M.gguf",
+            "dflash2": "incoai/Inkling-2-Mini-DFlash2:model.safetensors",
+            "vision": "strata-engine/Inkling-2-Mini-Strata:Inkling-2-Mini-Vision-v2.strata",
+            "tokenizer": "strata-engine/Inkling-2-Mini-Strata:tokenizer.json",
+            "chat_template": "strata-engine/Inkling-2-Mini-Strata:chat_template.jinja"
+        },
+        "recipe": "strata",
+        "suggested": false,
+        "labels": ["chat", "tool-calling", "vision"],
+        "size": 17.7,
+        "min_resident_gb": 3,
+        "strata": {
+            "family": "inkling",
+            "model": "UD-Q4_K_M",
+            "format": "gguf",
+            "backends": ["cuda", "rocm", "sycl", "metal"],
+            "revisions": {
+                "main": "800c946d7b9c830c86290df49afbbe91db8455f5",
+                "dflash2": "4f9088ea66c21f2b99ed657d1941c306b03e84d2",
+                "vision": "5623ceb47d7a01db827460ce1c23e7818a75661b",
+                "tokenizer": "5623ceb47d7a01db827460ce1c23e7818a75661b",
+                "chat_template": "5623ceb47d7a01db827460ce1c23e7818a75661b"
+            }
+        }
+    },
+    "Inkling-2-Mini-UD-IQ4_XS-Strata": {
+        "checkpoints": {
+            "main": "unsloth/Inkling-2-Mini-GGUF:Inkling-2-Mini-UD-IQ4_XS.gguf",
+            "dflash2": "incoai/Inkling-2-Mini-DFlash2:model.safetensors",
+            "vision": "strata-engine/Inkling-2-Mini-Strata:Inkling-2-Mini-Vision-v2.strata",
+            "tokenizer": "strata-engine/Inkling-2-Mini-Strata:tokenizer.json",
+            "chat_template": "strata-engine/Inkling-2-Mini-Strata:chat_template.jinja"
+        },
+        "recipe": "strata",
+        "suggested": false,
+        "labels": ["chat", "tool-calling", "vision"],
+        "size": 16.8,
+        "min_resident_gb": 3,
+        "strata": {
+            "family": "inkling",
+            "model": "UD-IQ4_XS",
+            "format": "gguf",
+            "backends": ["cuda", "rocm", "sycl", "metal"],
+            "revisions": {
+                "main": "800c946d7b9c830c86290df49afbbe91db8455f5",
+                "dflash2": "4f9088ea66c21f2b99ed657d1941c306b03e84d2",
+                "vision": "5623ceb47d7a01db827460ce1c23e7818a75661b",
+                "tokenizer": "5623ceb47d7a01db827460ce1c23e7818a75661b",
+                "chat_template": "5623ceb47d7a01db827460ce1c23e7818a75661b"
+            }
+        }
+    },
+    "Inkling-2-Mini-UD-Q3_K_XL-Strata": {
+        "checkpoints": {
+            "main": "unsloth/Inkling-2-Mini-GGUF:Inkling-2-Mini-UD-Q3_K_XL.gguf",
+            "dflash2": "incoai/Inkling-2-Mini-DFlash2:model.safetensors",
+            "vision": "strata-engine/Inkling-2-Mini-Strata:Inkling-2-Mini-Vision-v2.strata",
+            "tokenizer": "strata-engine/Inkling-2-Mini-Strata:tokenizer.json",
+            "chat_template": "strata-engine/Inkling-2-Mini-Strata:chat_template.jinja"
+        },
+        "recipe": "strata",
+        "suggested": false,
+        "labels": ["chat", "tool-calling", "vision"],
+        "size": 14.7,
+        "min_resident_gb": 2,
+        "strata": {
+            "family": "inkling",
+            "model": "UD-Q3_K_XL",
+            "format": "gguf",
+            "backends": ["cuda", "rocm", "sycl", "metal"],
+            "revisions": {
+                "main": "800c946d7b9c830c86290df49afbbe91db8455f5",
+                "dflash2": "4f9088ea66c21f2b99ed657d1941c306b03e84d2",
+                "vision": "5623ceb47d7a01db827460ce1c23e7818a75661b",
+                "tokenizer": "5623ceb47d7a01db827460ce1c23e7818a75661b",
+                "chat_template": "5623ceb47d7a01db827460ce1c23e7818a75661b"
+            }
+        }
+    },
+    "Inkling-2-Mini-UD-IQ3_XXS-Strata": {
+        "checkpoints": {
+            "main": "unsloth/Inkling-2-Mini-GGUF:Inkling-2-Mini-UD-IQ3_XXS.gguf",
+            "dflash2": "incoai/Inkling-2-Mini-DFlash2:model.safetensors",
+            "vision": "strata-engine/Inkling-2-Mini-Strata:Inkling-2-Mini-Vision-v2.strata",
+            "tokenizer": "strata-engine/Inkling-2-Mini-Strata:tokenizer.json",
+            "chat_template": "strata-engine/Inkling-2-Mini-Strata:chat_template.jinja"
+        },
+        "recipe": "strata",
+        "suggested": false,
+        "labels": ["chat", "tool-calling", "vision"],
+        "size": 12.7,
+        "min_resident_gb": 2,
+        "strata": {
+            "family": "inkling",
+            "model": "UD-IQ3_XXS",
+            "format": "gguf",
+            "backends": ["cuda", "rocm", "sycl", "metal"],
+            "revisions": {
+                "main": "800c946d7b9c830c86290df49afbbe91db8455f5",
+                "dflash2": "4f9088ea66c21f2b99ed657d1941c306b03e84d2",
+                "vision": "5623ceb47d7a01db827460ce1c23e7818a75661b",
+                "tokenizer": "5623ceb47d7a01db827460ce1c23e7818a75661b",
+                "chat_template": "5623ceb47d7a01db827460ce1c23e7818a75661b"
+            }
+        }
+    },
+    "Inkling-2-Mini-UD-Q2_K_XL-Strata": {
+        "checkpoints": {
+            "main": "unsloth/Inkling-2-Mini-GGUF:Inkling-2-Mini-UD-Q2_K_XL.gguf",
+            "dflash2": "incoai/Inkling-2-Mini-DFlash2:model.safetensors",
+            "vision": "strata-engine/Inkling-2-Mini-Strata:Inkling-2-Mini-Vision-v2.strata",
+            "tokenizer": "strata-engine/Inkling-2-Mini-Strata:tokenizer.json",
+            "chat_template": "strata-engine/Inkling-2-Mini-Strata:chat_template.jinja"
+        },
+        "recipe": "strata",
+        "suggested": false,
+        "labels": ["chat", "tool-calling", "vision"],
+        "size": 10.2,
+        "min_resident_gb": 2,
+        "strata": {
+            "family": "inkling",
+            "model": "UD-Q2_K_XL",
+            "format": "gguf",
+            "backends": ["cuda", "rocm", "sycl", "metal"],
+            "revisions": {
+                "main": "800c946d7b9c830c86290df49afbbe91db8455f5",
+                "dflash2": "4f9088ea66c21f2b99ed657d1941c306b03e84d2",
+                "vision": "5623ceb47d7a01db827460ce1c23e7818a75661b",
+                "tokenizer": "5623ceb47d7a01db827460ce1c23e7818a75661b",
+                "chat_template": "5623ceb47d7a01db827460ce1c23e7818a75661b"
+            }
+        }
+    },
+    "Inkling-2-Mini-UD-IQ2_XXS-Strata": {
+        "checkpoints": {
+            "main": "unsloth/Inkling-2-Mini-GGUF:Inkling-2-Mini-UD-IQ2_XXS.gguf",
+            "dflash2": "incoai/Inkling-2-Mini-DFlash2:model.safetensors",
+            "vision": "strata-engine/Inkling-2-Mini-Strata:Inkling-2-Mini-Vision-v2.strata",
+            "tokenizer": "strata-engine/Inkling-2-Mini-Strata:tokenizer.json",
+            "chat_template": "strata-engine/Inkling-2-Mini-Strata:chat_template.jinja"
+        },
+        "recipe": "strata",
+        "suggested": false,
+        "labels": ["chat", "tool-calling", "vision"],
+        "size": 9.6,
+        "min_resident_gb": 2,
+        "strata": {
+            "family": "inkling",
+            "model": "UD-IQ2_XXS",
+            "format": "gguf",
+            "backends": ["cuda", "rocm", "sycl", "metal"],
+            "revisions": {
+                "main": "800c946d7b9c830c86290df49afbbe91db8455f5",
+                "dflash2": "4f9088ea66c21f2b99ed657d1941c306b03e84d2",
+                "vision": "5623ceb47d7a01db827460ce1c23e7818a75661b",
+                "tokenizer": "5623ceb47d7a01db827460ce1c23e7818a75661b",
+                "chat_template": "5623ceb47d7a01db827460ce1c23e7818a75661b"
+            }
+        }
+    },
+    "Inkling-2-Mini-UD-IQ1_M-Strata": {
+        "checkpoints": {
+            "main": "unsloth/Inkling-2-Mini-GGUF:Inkling-2-Mini-UD-IQ1_M.gguf",
+            "dflash2": "incoai/Inkling-2-Mini-DFlash2:model.safetensors",
+            "vision": "strata-engine/Inkling-2-Mini-Strata:Inkling-2-Mini-Vision-v2.strata",
+            "tokenizer": "strata-engine/Inkling-2-Mini-Strata:tokenizer.json",
+            "chat_template": "strata-engine/Inkling-2-Mini-Strata:chat_template.jinja"
+        },
+        "recipe": "strata",
+        "suggested": false,
+        "labels": ["chat", "tool-calling", "vision"],
+        "size": 9.1,
+        "min_resident_gb": 2,
+        "strata": {
+            "family": "inkling",
+            "model": "UD-IQ1_M",
+            "format": "gguf",
+            "backends": ["cuda", "rocm", "sycl", "metal"],
+            "revisions": {
+                "main": "800c946d7b9c830c86290df49afbbe91db8455f5",
+                "dflash2": "4f9088ea66c21f2b99ed657d1941c306b03e84d2",
+                "vision": "5623ceb47d7a01db827460ce1c23e7818a75661b",
+                "tokenizer": "5623ceb47d7a01db827460ce1c23e7818a75661b",
+                "chat_template": "5623ceb47d7a01db827460ce1c23e7818a75661b"
+            }
+        }
+    },
+    "Inkling-2-Mini-UD-IQ1_S-Strata": {
+        "checkpoints": {
+            "main": "unsloth/Inkling-2-Mini-GGUF:Inkling-2-Mini-UD-IQ1_S.gguf",
+            "dflash2": "incoai/Inkling-2-Mini-DFlash2:model.safetensors",
+            "vision": "strata-engine/Inkling-2-Mini-Strata:Inkling-2-Mini-Vision-v2.strata",
+            "tokenizer": "strata-engine/Inkling-2-Mini-Strata:tokenizer.json",
+            "chat_template": "strata-engine/Inkling-2-Mini-Strata:chat_template.jinja"
+        },
+        "recipe": "strata",
+        "suggested": false,
+        "labels": ["chat", "tool-calling", "vision"],
+        "size": 8.8,
+        "min_resident_gb": 2,
+        "strata": {
+            "family": "inkling",
+            "model": "UD-IQ1_S",
+            "format": "gguf",
+            "backends": ["cuda", "rocm", "sycl", "metal"],
+            "revisions": {
+                "main": "800c946d7b9c830c86290df49afbbe91db8455f5",
+                "dflash2": "4f9088ea66c21f2b99ed657d1941c306b03e84d2",
+                "vision": "5623ceb47d7a01db827460ce1c23e7818a75661b",
+                "tokenizer": "5623ceb47d7a01db827460ce1c23e7818a75661b",
+                "chat_template": "5623ceb47d7a01db827460ce1c23e7818a75661b"
             }
         }
     },

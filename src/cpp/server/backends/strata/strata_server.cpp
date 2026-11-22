@@ -72,7 +72,10 @@ bool platform_supports_backend(const std::string& backend) {
 
 const std::vector<std::string>& control_files() {
     static const std::vector<std::string> files{
-        python_binary(), "serve/server.py", "setup.py", "tools/strata_tokenizer.py", "tools/iq_pack.py"};
+        python_binary(), "serve/server.py", "setup.py", "tools/strata_tokenizer.py", "tools/iq_pack.py",
+        "tools/strata_gguf.py", "third_party/strata-gguf-py/gguf/__init__.py",
+        "tools/hy4_tokenizer.py", "tools/inkling_tokenizer.py",
+        "strata_control/drafting.py", "strata_control/drafting_fetch.py"};
     return files;
 }
 
@@ -111,7 +114,8 @@ json release_assets(const std::string& version) {
                 row >> target >> component_version >> name >> hash;
             } else {
                 row >> hash >> name;
-                if (name.rfind("strata-engine-", 0) != 0) continue;
+                if (name.rfind("strata-engine-", 0) != 0 && name.rfind("strata-hy4-", 0) != 0 &&
+                    name.rfind("strata-inkling-", 0) != 0) continue;
             }
             if (!row || !utils::is_safe_path_component(name) ||
                 !std::regex_match(hash, std::regex("[0-9a-f]{64}")) || assets.contains(name)) {
@@ -144,8 +148,70 @@ std::string asset_hash(const std::string& version, const std::string& filename) 
     return release_assets(version).at(filename).get<std::string>();
 }
 
+std::string detected_arch(const std::string& backend) {
+    if (backend == "cuda") return SystemInfo::get_cuda_arch();
+    if (backend != "rocm") return "";
+    const std::string arch = SystemInfo::get_rocm_arch();
+    if (arch != "gfx110X" && arch != "gfx120X") return arch;
+    auto devices = SystemInfoCache::get_system_info_with_cache().at("devices").at("amd_gpu");
+    for (auto& gpu : devices) {
+        gpu["family"] = strata::ops()->device_family(gpu.value("family", ""), gpu.value("name", ""));
+    }
+    return SystemInfo::select_rocm_arch(devices);
+}
+
+std::string selected_runtime() {
+    const auto* config = RuntimeConfig::global();
+    const std::string selected = config ? config->backend_string("strata", "runtime") : "";
+    return selected.empty() ? "qwen" : selected;
+}
+
+std::string runtime_for_family(const std::string& family) {
+    return family == "hy4" || family == "inkling" ? family : "qwen";
+}
+
+bool build_matches(const fs::path& install, const std::string& asset) {
+    std::ifstream file(install / "engine-component.json");
+    if (!file) return false;
+    const auto manifest = json::parse(file, nullptr, false);
+    if (!manifest.is_object()) return false;
+    for (const auto* field : {"id", "entrypoint", "version", "platform", "backend"}) {
+        if (!manifest.contains(field) || !manifest.at(field).is_string()) return false;
+    }
+    if (manifest.contains("variant") && !manifest.at("variant").is_null() &&
+        !manifest.at("variant").is_string()) return false;
+    const std::string selected = selected_runtime();
+    const std::string component = selected == "qwen" ? "strata-engine" : "strata-" + selected;
+    if (manifest.value("id", "") != component ||
+        !fs::is_regular_file(install / manifest.value("entrypoint", component))) return false;
+    if (asset.empty()) return true;
+    std::string filename = component + "-" + manifest.value("version", "") + "-" +
+        manifest.value("platform", "") + "-" + manifest.value("backend", "");
+    const std::string variant = manifest.contains("variant") && !manifest.at("variant").is_null() ?
+        manifest.at("variant").get<std::string>() : "";
+    if (!variant.empty()) filename += "-" + variant;
+    return filename + ".tar.gz" == asset;
+}
+
 class StrataOps : public BackendOps {
 public:
+    ConfigChangeEffects config_change_effects(const json& changes) const override {
+        const bool runtime_changed = changes.contains("runtime");
+        return {runtime_changed, runtime_changed};
+    }
+
+    std::string expected_version(const json& pins, const std::string& backend) const override {
+        const std::string selected = selected_runtime();
+        return (selected == "qwen" ? pins : pins.at(selected)).at(backend).get<std::string>();
+    }
+
+    bool model_visible(const ModelInfo& info) const override {
+        const auto selection = strata::checkpoint_selection(info.checkpoint());
+        if (selection.empty()) return false;
+        const std::string family = selection.at("family");
+        return selected_runtime() == runtime_for_family(family);
+    }
+
     std::string device_family(const std::string& family, const std::string& name) const override {
         std::string lower = name;
         std::transform(lower.begin(), lower.end(), lower.begin(),
@@ -180,7 +246,7 @@ public:
     std::string validate_registration_checkpoint(const std::string& checkpoint) const override {
         const auto selection = strata::checkpoint_selection(checkpoint);
         if (checkpoint.find("-00001-of-") != std::string::npos ||
-            selection.value("format", "") == "ready") {
+            selection.value("format", "") == "ready" || selection.value("family", "") == "inkling") {
             return "Use the Strata catalog entry for this model to include all required checkpoints";
         }
         return !selection.empty() ? "" :
@@ -188,6 +254,13 @@ public:
     }
 
     std::string validate_checkpoint_file(const std::string& path) const override {
+        if (fs::path(path).extension() == ".strata") {
+            std::ifstream file(utils::path_from_utf8(path), std::ios::binary);
+            char magic[8] = {};
+            file.read(magic, sizeof(magic));
+            return file.gcount() == sizeof(magic) && std::string(magic, 8) == std::string("STRATA\0\1", 8) ?
+                "" : "Invalid Strata cache file";
+        }
         return llamacpp::ops()->validate_checkpoint_file(path);
     }
 
@@ -196,6 +269,10 @@ public:
         if (selection.empty()) {
             return "Unsupported Strata checkpoint: " + info.checkpoint();
         }
+        if (!model_visible(info)) {
+            return "This model requires the " + runtime_for_family(selection.at("family").get<std::string>()) +
+                   " Strata runtime; selected runtime is " + selected_runtime();
+        }
         if (model_backends(info)->empty()) return "No compatible Strata backend for this model on this machine";
         return "";
     }
@@ -203,11 +280,17 @@ public:
     std::optional<std::vector<std::string>> model_backends(const ModelInfo& info) const override {
         const auto selection = strata::checkpoint_selection(info.checkpoint());
         std::vector<std::string> result;
-        if (selection.empty()) return result;
+        if (selection.empty() || !model_visible(info)) return result;
         const auto allowed = selection.at("backends").get<std::vector<std::string>>();
         const auto system_info = SystemInfoCache::get_system_info_with_cache();
         for (const auto& backend : SystemInfo::get_supported_backends("strata").backends) {
             if (std::find(allowed.begin(), allowed.end(), backend) == allowed.end()) continue;
+            if (backend == "rocm" &&
+                BackendUtils::find_external_backend_binary("strata", backend).empty()) {
+                const std::string arch = detected_arch(backend);
+                if ((arch == "gfx1150" && selected_runtime() != "inkling") ||
+                    (arch == "gfx1103" && selected_runtime() == "qwen")) continue;
+            }
             if (system_info.at("recipes").at("strata").at("backends").at(backend)
                     .value("state", "") == "action_required") continue;
             result.push_back(backend);
@@ -234,6 +317,11 @@ public:
             return {false, "Strata " + backend + " is not supported on this platform"};
         }
         const auto root = BackendUtils::get_install_directory("strata", backend);
+        if (BackendUtils::find_external_backend_binary("strata", backend).empty() &&
+            fs::is_regular_file(fs::path(root) / "version.txt") &&
+            !build_matches(root, "")) {
+            return {false, "Installed Strata build does not match 'strata.runtime'."};
+        }
         const auto& files = control_files();
         const bool complete = binary_found && std::all_of(files.begin(), files.end(),
             [&](const std::string& file) { return fs::is_regular_file(fs::path(root) / "control" / file); });
@@ -242,9 +330,12 @@ public:
 
     std::optional<UnavailableState> classify_unavailable(
         const std::string& backend, const std::string& install_error,
-        const std::string&) const override {
+        const std::string& install_command) const override {
         if (!platform_supports_backend(backend)) {
             return UnavailableState{"unsupported", install_error, ""};
+        }
+        if (install_error == "Installed Strata build does not match 'strata.runtime'.") {
+            return UnavailableState{"update_required", install_error, install_command, true};
         }
         return std::nullopt;
     }
@@ -283,7 +374,7 @@ double streaming_memory_pool_gb(const json& devices, const std::vector<std::stri
 }
 
 std::string engine_asset(const std::string& target, const std::string& backend,
-                         const std::string& arch, const json& assets) {
+                         const std::string& arch, const json& assets, const std::string& family) {
     std::string variant;
     if (target == "macos-arm64" && backend == "metal") {
         variant = "metal";
@@ -296,27 +387,38 @@ std::string engine_asset(const std::string& target, const std::string& backend,
     } else if (backend == "sycl" && target == "linux-x86_64") {
         variant = "sycl";
     } else if (backend == "rocm") {
-        if (arch == "gfx1030" || arch == "gfx1031") {
+        if ((arch == "gfx1150" && family != "inkling") ||
+            (arch == "gfx1103" && family != "hy4" && family != "inkling")) {
+            throw std::invalid_argument("No prebuilt Strata " + family + " runtime for " + arch +
+                                        "; select another runtime or configure a custom engine");
+        }
+        if (arch == "gfx1030" || arch == "gfx1031" || arch == "gfx1032") {
             variant = target == "windows-x86_64" ? "hip-rdna2" : "hip-rx6000";
         } else if (arch == "gfx1200" || arch == "gfx1201") variant = "hip-rx9070";
-        else if (arch == "gfx1100" || arch == "gfx1101" || arch == "gfx1102") {
+        else if (arch == "gfx1100" || arch == "gfx1101" || arch == "gfx1102" ||
+                 arch == "gfx1103" || arch == "gfx1150") {
             variant = target == "windows-x86_64" ? "hip-rdna3" : "hip-rx7900";
         } else if (arch == "gfx1151") {
-            variant = target == "windows-x86_64" ? "hip-rdna3" : "hip-halo";
+            variant = target == "windows-x86_64" ?
+                (family == "hy4" || family == "inkling" ? "hip-strix" : "hip-rdna3") : "hip-halo";
         } else {
             throw std::invalid_argument("Unsupported Strata AMD GPU: " + arch);
         }
     } else {
         throw std::invalid_argument("Unsupported Strata backend: " + backend);
     }
-    return select_asset(assets, "strata-engine-", "-" + target + "-" + variant + ".tar.gz");
+    const std::string prefix = family == "hy4" || family == "inkling" ? "strata-" + family + "-" :
+        "strata-engine-";
+    return select_asset(assets, prefix, "-" + target + "-" + variant + ".tar.gz");
 }
 
-std::vector<BackendAsset> additional_assets(const std::string&, const std::string& version) {
+std::vector<BackendAsset> additional_assets(const std::string& backend, const std::string&) {
     const auto target = platform();
+    const auto pins = utils::JsonUtils::load_from_file(utils::get_resource_path("resources/backend_versions.json"));
+    const std::string version = pins.at("strata").at(backend).get<std::string>();
     std::vector<BackendAsset> assets{{select_asset(release_assets(version), "strata-control-", "-" + target +
              (target == "windows-x86_64" ? ".zip" : ".tar.gz")), "control",
-             control_files()}};
+             control_files(), version}};
     return assets;
 }
 
@@ -338,13 +440,17 @@ json checkpoint_selection(const std::string& checkpoint) {
     return json::object();
 }
 
-void validate_options(int ctx_size, const std::string& custom_args, int parallel, bool embedded_mtp) {
+void validate_options(int ctx_size, const std::string& custom_args, int parallel, bool embedded_mtp,
+                      const std::string& family) {
     if (ctx_size < 256) throw std::invalid_argument("Strata context size must be at least 256");
-    if (parallel < 1 || parallel > 8) {
-        throw std::invalid_argument("Strata parallel slots must be between 1 and 8");
+    const int max_parallel = family == "inkling" ? 64 : family == "hy4" ? 1 : 8;
+    if (parallel < 1 || parallel > max_parallel) {
+        throw std::invalid_argument("Strata " + family + " parallel slots must be between 1 and " +
+                                    std::to_string(max_parallel));
     }
     const auto error = utils::validate_custom_args(custom_args, {
-        "--native", "--model", "--pack", "--max-context", "--ctx", "--serve", "--batch", "--slots",
+        "--native", "--model", "--pack", "--max-context", "--ctx", "--serve", "--batch", "--slots", "--parallel",
+        "--engram", "--native-dense-gguf", "--ple-gguf", "--embd-gguf",
         "--tokens", "--force", "--emb", "--vision", "--bench-pp", "--bench-tg",
         "--max-new", "--n", "--greedy",
         "--dump-full-logits", "--help", "-h",
@@ -373,13 +479,15 @@ std::unique_ptr<WrappedServer> create(const BackendContext& ctx) {
 }
 
 const BackendSpec* spec() {
-    static const BackendSpec spec = [] {
-        BackendSpec result(descriptor.recipe, descriptor.binary, StrataServer::get_install_params);
-        result.additional_assets_fn = additional_assets;
-        result.asset_hash_fn = asset_hash;
-        return result;
-    }();
-    return &spec;
+    static const auto make = [](const std::string& binary) {
+        BackendSpec spec(descriptor.recipe, binary, StrataServer::get_install_params, false, build_matches);
+        spec.additional_assets_fn = additional_assets;
+        spec.asset_hash_fn = asset_hash;
+        return spec;
+    };
+    static const std::map<std::string, BackendSpec> specs{
+        {"qwen", make("strata")}, {"hy4", make("strata-hy4")}, {"inkling", make("strata-inkling")}};
+    return &specs.at(selected_runtime());
 }
 
 const BackendOps* ops() { return single_ops<StrataOps>(); }
@@ -396,21 +504,9 @@ InstallParams StrataServer::get_install_params(const std::string& backend, const
     if (!platform_supports_backend(backend)) {
         throw std::invalid_argument("Strata " + backend + " is not supported on this platform");
     }
-    std::string arch;
-    if (backend == "cuda") {
-        arch = SystemInfo::get_cuda_arch();
-    } else if (backend == "rocm") {
-        arch = SystemInfo::get_rocm_arch();
-        if (arch == "gfx110X" || arch == "gfx120X") {
-            auto devices = SystemInfoCache::get_system_info_with_cache().at("devices").at("amd_gpu");
-            for (auto& gpu : devices) {
-                gpu["family"] = strata::ops()->device_family(
-                    gpu.value("family", ""), gpu.value("name", ""));
-            }
-            arch = SystemInfo::select_rocm_arch(devices);
-        }
-    }
-    return {"Niko1221/Strata", strata::engine_asset(platform(), backend, arch, release_assets(version)), ""};
+    return {"Niko1221/Strata",
+            strata::engine_asset(platform(), backend, detected_arch(backend), release_assets(version),
+                                 selected_runtime()), ""};
 }
 
 void StrataServer::load(const std::string& model_name, const ModelInfo& model_info,
@@ -435,7 +531,27 @@ void StrataServer::load(const std::string& model_name, const ModelInfo& model_in
         throw std::invalid_argument("Strata " + backend + " does not support this model on this machine");
     }
     RuntimeConfig::validate_backend_choice("strata", backend);
-    backend_manager_->install_backend("strata", backend);
+    const std::string family = selection.at("family");
+    const int ctx_size = options.get_option("ctx_size");
+    const std::string custom_args = options.get_option("strata_args");
+    const int parallel = options.get_option("strata_parallel");
+    strata::validate_options(ctx_size, custom_args, parallel, family == "qwen36", family);
+    const std::string drafting = options.get_option("strata_drafting");
+    if (drafting != "auto" && drafting != "mtp" && drafting != "dflash2" && drafting != "off") {
+        throw std::invalid_argument("Strata drafting must be auto, mtp, dflash2 or off");
+    }
+    if ((family == "hy4" || family == "inkling") && (drafting == "mtp" || drafting == "dflash2")) {
+        throw std::invalid_argument("Strata " + family + " uses its built-in drafter; select auto or off");
+    }
+    const auto installed = strata::ops()->check_install(backend, true);
+    if (installed.error == "Installed Strata build does not match 'strata.runtime'.") {
+        throw std::runtime_error(installed.error + " Update the backend before loading a model.");
+    }
+    if (BackendUtils::find_external_backend_binary("strata", backend).empty()) {
+        backend_manager_->install_backend("strata", backend);
+    } else if (!installed.installed) {
+        throw std::runtime_error(installed.error);
+    }
     const std::string executable = BackendUtils::get_backend_binary_path(*strata::spec(), backend);
     const fs::path install = utils::path_from_utf8(BackendUtils::get_install_directory("strata", backend));
     const fs::path control = install / "control";
@@ -453,17 +569,13 @@ void StrataServer::load(const std::string& model_name, const ModelInfo& model_in
     }
     runtime_dir_ = utils::path_to_utf8(runtime);
     const fs::path config_path = utils::path_from_utf8(runtime_dir_) / "config.json";
-    const int ctx_size = options.get_option("ctx_size");
-    const std::string custom_args = options.get_option("strata_args");
-    const int parallel = options.get_option("strata_parallel");
-    strata::validate_options(ctx_size, custom_args, parallel, selection.at("family") == "qwen36");
     std::ifstream version_file(utils::path_from_utf8(
         BackendUtils::get_installed_version_file(*strata::spec(), backend)));
     std::string version;
     if (!std::getline(version_file, version) || !utils::is_safe_path_component(version)) {
         throw std::runtime_error("Cannot read the installed Strata version");
     }
-    const fs::path cache = utils::path_from_utf8(utils::get_cache_dir()) / "strata" / backend / version /
+    const fs::path cache = utils::path_from_utf8(utils::get_cache_dir()) / "strata" / backend / version / "packs" /
         std::to_string(std::hash<std::string>{}(gguf + (fs::is_regular_file(utils::path_from_utf8(gguf))
             ? std::to_string(fs::file_size(utils::path_from_utf8(gguf))) +
               std::to_string(static_cast<long long>(
@@ -476,7 +588,9 @@ void StrataServer::load(const std::string& model_name, const ModelInfo& model_in
         {"mtp_cache", utils::path_to_utf8(
             utils::path_from_utf8(utils::get_cache_dir()) / "strata" / "mtp" / version)},
         {"offline", RuntimeConfig::global() && RuntimeConfig::global()->offline()},
-        {"backend", backend}, {"context", ctx_size}, {"parallel", parallel},
+        {"backend", backend}, {"context", ctx_size}, {"parallel", parallel}, {"drafting", drafting},
+        {"amd_gpu", SystemInfoCache::get_system_info_with_cache().at("devices").at("amd_gpu")},
+        {"version", version},
         {"executable", executable}, {"name", model_name},
         {"args", utils::parse_custom_args(custom_args)}, {"config", utils::path_to_utf8(config_path)},
     }, utils::path_to_utf8(request_path));
@@ -496,6 +610,11 @@ void StrataServer::load(const std::string& model_name, const ModelInfo& model_in
     ServerCommand command;
     command.program = python;
     command.port = choose_port();
+    if (family != "hy4" && family != "inkling") {
+        // Control's pre-load cache estimate bypasses the engine's PLE-release policy.
+        command.env.emplace_back("STRATA_NO_AUTO_CONVERSATION_CACHE", "1");
+        command.env.emplace_back("STRATA_PLE_AUTO_RAM", "0");
+    }
     command.args = {"-E", "-s", utils::path_to_utf8(control / "serve" / "server.py"),
                     "--engine", "strata", "--config", config_path.string(),
                     "--host", "127.0.0.1", "--port", std::to_string(command.port),

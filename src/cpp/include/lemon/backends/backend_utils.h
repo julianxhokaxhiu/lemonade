@@ -1,6 +1,7 @@
 #pragma once
 
 #include <filesystem>
+#include <fstream>
 #include <functional>
 #include <optional>
 #include <string>
@@ -22,10 +23,16 @@ namespace lemon::backends {
         std::string filename;
         std::string directory;
         std::vector<std::string> required_files;
+        std::string version_override;
 
         bool is_complete(const std::string& root) const {
             for (const auto& file : required_files) {
                 if (!fs::is_regular_file(fs::path(root) / directory / file)) return false;
+            }
+            if (!version_override.empty()) {
+                std::ifstream marker(fs::path(root) / directory / ".lemonade-release");
+                std::string installed_version;
+                if (!std::getline(marker, installed_version) || installed_version != version_override) return false;
             }
             return !required_files.empty();
         }

@@ -97,6 +97,25 @@ void expect_args_variant(const lemon::BackendDescriptor& descriptor,
 }  // namespace
 
 int main() {
+    for (const std::string runtime : {"qwen", "hy4", "inkling"}) {
+        expect_accepted("strata", "runtime", runtime);
+    }
+    for (const std::string runtime : {"xrt", "hrx"}) {
+        expect_accepted("flm", "runtime", runtime);
+        expect_rejected("strata", "runtime", runtime, "'strata.runtime'");
+    }
+    expect_rejected("strata", "runtime", 1, "'strata.runtime'");
+    expect_rejected("flm", "runtime", "inkling", "'flm.runtime'");
+    {
+        RuntimeConfig config(json::object());
+        config.set({{"flm", {{"runtime", "hrx"}}}, {"strata", {{"runtime", "inkling"}}}});
+        config.set({{"strata", {{"runtime", "hy4"}}}});
+        if (config.backend_string("flm", "runtime") != "hrx" ||
+            config.backend_string("strata", "runtime") != "hy4") {
+            std::puts("[FAIL] Strata runtime changes must not modify FLM");
+            ++failures;
+        }
+    }
     {
         RuntimeConfig config(json::object());
         expect_absent_key_answers_default("disable_model_filtering", config.disable_model_filtering());

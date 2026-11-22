@@ -17,7 +17,7 @@ const std::vector<BackendRegistration>& all_registrations() {
 const BackendSpec* spec_for(const std::string& recipe) {
     for (const auto& reg : all_registrations()) {
         if (reg.descriptor->recipe == recipe) {
-            return reg.spec;
+            return reg.spec();
         }
     }
     return nullptr;

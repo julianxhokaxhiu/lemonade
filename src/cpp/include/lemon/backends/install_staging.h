@@ -12,8 +12,8 @@ namespace lemon::backends {
 
     /**
      * Recursively search `dir` for a regular file named `binary_name` (or
-     * `binary_name + ".exe"` on Windows). Returns the full path, or "" if not
-     * found or `dir` does not exist.
+     * `binary_name + ".exe"` on Windows), preferring files directly in `dir`.
+     * Returns the full path, or "" if not found or `dir` does not exist.
      */
     inline std::string find_executable_in_dir(const std::string& dir,
                                               const std::string& binary_name) {
@@ -21,8 +21,16 @@ namespace lemon::backends {
         if (!fs::exists(dir)) {
             return "";
         }
+        const fs::path root_binary = fs::path(dir) / binary_name;
+        if (fs::is_regular_file(root_binary)) {
+            return root_binary.string();
+        }
 #ifdef _WIN32
         const std::string binary_name_exe = binary_name + ".exe";
+        const fs::path root_binary_exe = fs::path(dir) / binary_name_exe;
+        if (fs::is_regular_file(root_binary_exe)) {
+            return root_binary_exe.string();
+        }
 #endif
         for (const fs::directory_entry& dir_entry : fs::recursive_directory_iterator(dir)) {
             if (dir_entry.is_regular_file()) {

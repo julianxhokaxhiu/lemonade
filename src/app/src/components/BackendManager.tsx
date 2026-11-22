@@ -824,7 +824,7 @@ const BackendManager: React.FC<BackendManagerProps> = ({ isActive = true }) => {
   const [installing, setInstalling] = useState<string | null>(null); // "recipe:backend"
   const [toastMsg, setToastMsg] = useState<string | null>(null);
   const [runtimeConfig, setRuntimeConfig] = useState<Record<string, unknown>>({});
-  const [savingFlmBuild, setSavingFlmBuild] = useState(false);
+  const [savingRuntime, setSavingRuntime] = useState({ flm: false, strata: false });
   const backendTunings = useMemo<Record<string, BackendTuning>>(
     () => backendTuningsFromServerConfig(runtimeConfig, sysInfo),
     [runtimeConfig, sysInfo],
@@ -1064,21 +1064,21 @@ const BackendManager: React.FC<BackendManagerProps> = ({ isActive = true }) => {
     }
   }, [fetchInfo, syncBackendStatus, toast]);
 
-  const handleFlmBuildChange = useCallback(async (runtime: string) => {
-    setSavingFlmBuild(true);
+  const handleRuntimeChange = useCallback(async (recipe: 'flm' | 'strata', runtime: string) => {
+    setSavingRuntime(current => ({ ...current, [recipe]: true }));
     runtimeConfigRequestRef.current += 1;
     try {
-      await api.setRuntimeConfig({ flm_runtime: runtime });
+      await api.setRuntimeConfig({ [`${recipe}_runtime`]: runtime });
       runtimeConfigRequestRef.current += 1;
       setRuntimeConfig(current => ({
         ...current,
-        flm: { ...backendRuntimeRecord(current.flm), runtime },
+        [recipe]: { ...backendRuntimeRecord(current[recipe]), runtime },
       }));
       await fetchInfo(false);
     } catch (err) {
       toast(friendlyErrorMessage(err));
     } finally {
-      setSavingFlmBuild(false);
+      setSavingRuntime(current => ({ ...current, [recipe]: false }));
     }
   }, [fetchInfo, toast]);
 
@@ -1254,7 +1254,8 @@ const BackendManager: React.FC<BackendManagerProps> = ({ isActive = true }) => {
             const badge = stateBadge(info.state);
             const cellKey = backendKey(recipe, backend);
             const canEditArgs = backendArgsTarget(runtimeConfig, cellKey) !== null;
-            const isInstalling = installing === cellKey || (recipe === 'flm' && savingFlmBuild);
+            const isInstalling = installing === cellKey
+              || ((recipe === 'flm' || recipe === 'strata') && savingRuntime[recipe]);
             const backendDownload = downloadItems.find(download => backendDownloadMatches(download, recipe, backend));
             const showBackendProgress = Boolean(backendDownload && (isDownloadActive(backendDownload) || backendDownload.status === 'paused'));
             const tuning = backendTunings[cellKey] || null;
@@ -1369,10 +1370,26 @@ const BackendManager: React.FC<BackendManagerProps> = ({ isActive = true }) => {
                       aria-label={t('FastFlowLM runtime')}
                       value={backendRuntimeRecord(runtimeConfig.flm)?.runtime === 'hrx' ? 'hrx' : 'xrt'}
                       disabled={isInstalling || showBackendProgress || !runtimeConfig.flm}
-                      onChange={event => void handleFlmBuildChange(event.target.value)}
+                      onChange={event => void handleRuntimeChange('flm', event.target.value)}
                     >
                       <option value="xrt">{t('XRT (default)')}</option>
                       <option value="hrx">HRX</option>
+                    </select>
+                  </label>
+                )}
+                {recipe === 'strata' && (
+                  <label className="backend-card__variant-meta" title={t('Changing the runtime requires an update before Strata can run.')}>
+                    <span>{t('Runtime')}</span>
+                    <select
+                      className="select"
+                      aria-label={t('Strata runtime')}
+                      value={cleanString(backendRuntimeRecord(runtimeConfig.strata)?.runtime) || 'qwen'}
+                      disabled={isInstalling || showBackendProgress || !runtimeConfig.strata}
+                      onChange={event => void handleRuntimeChange('strata', event.target.value)}
+                    >
+                      <option value="qwen">{t('Qwen (default)')}</option>
+                      <option value="hy4">Hy4-Flash</option>
+                      <option value="inkling">Inkling</option>
                     </select>
                   </label>
                 )}
@@ -1477,7 +1494,7 @@ const BackendManager: React.FC<BackendManagerProps> = ({ isActive = true }) => {
         </div>
       </article>
     );
-  }, [backendTunings, downloadItems, handleAction, handleFlmBuildChange, handleInstall, handleUninstall, installing, runtimeConfig, savingFlmBuild, showLogos, showTech, sysInfo]);
+  }, [backendTunings, downloadItems, handleAction, handleRuntimeChange, handleInstall, handleUninstall, installing, runtimeConfig, savingRuntime, showLogos, showTech, sysInfo]);
 
 
   const isUpdatesView = viewFilter === 'updates';

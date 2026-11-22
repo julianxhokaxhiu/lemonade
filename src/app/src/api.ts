@@ -2145,10 +2145,14 @@ class LemonadeAPI {
   }
 
   async setRuntimeConfig(changes: Record<string, unknown>): Promise<Record<string, unknown>> {
-    return this._json<Record<string, unknown>>('/internal/set', {
+    const result = await this._json<Record<string, unknown>>('/internal/set', {
       method: 'POST',
       body: changes,
     });
+    if ('strata_runtime' in changes || (isObject(changes.strata) && 'runtime' in changes.strata)) {
+      this._notifyModelsChanged();
+    }
+    return result;
   }
 
   async getDefaultContextSize(): Promise<LemonadeContextDefault | undefined> {

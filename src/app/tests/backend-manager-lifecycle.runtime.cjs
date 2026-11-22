@@ -55,6 +55,13 @@ assert.ok(flmBuildSelector, 'FastFlowLM runtime selector not found');
 assert.match(flmBuildSelector, /disabled=\{isInstalling \|\| showBackendProgress \|\| !runtimeConfig\.flm\}/);
 assert.doesNotMatch(flmBuildSelector, /info\.state|Uninstall FastFlowLM before changing its build/);
 assert.match(flmBuildSelector, /Changing the runtime requires an update before FastFlowLM can run/);
+const strataRuntimeSelector = source.match(
+  /recipe === 'strata' && \([\s\S]*?<select[\s\S]*?<\/select>/,
+)?.[0];
+assert.ok(strataRuntimeSelector, 'Strata runtime selector not found');
+assert.match(strataRuntimeSelector, /handleRuntimeChange\('strata'/);
+assert.match(strataRuntimeSelector, /disabled=\{isInstalling \|\| showBackendProgress \|\| !runtimeConfig\.strata\}/);
+assert.doesNotMatch(strataRuntimeSelector, /runtimeConfig\.flm|handleRuntimeChange\('flm'/);
 
 // Concurrent refreshes may not overwrite the newest system-info snapshot.
 assert.match(source, /const requestId = \+\+systemInfoRequestRef\.current/);
@@ -156,17 +163,17 @@ function configFlow(api, loadSystemInfo = async () => ({})) {
   const callbacks = [];
   function visit(node) {
     if (ts.isVariableDeclaration(node) &&
-        ['fetchInfo', 'handleFlmBuildChange'].includes(node.name.getText(parsed))) {
+        ['fetchInfo', 'handleRuntimeChange'].includes(node.name.getText(parsed))) {
       callbacks.push(`const ${node.getText(parsed)};`);
     }
     ts.forEachChild(node, visit);
   }
   visit(parsed);
   const module = { exports: {} };
-  let config = { flm: { runtime: 'xrt', args: '--pmode 1' } };
+  let config = { flm: { runtime: 'xrt', args: '--pmode 1' }, strata: { runtime: 'qwen', args: '--chunk 512' } };
   const errors = [];
   vm.runInNewContext(ts.transpileModule(callbacks.join('\n') +
-    '\nmodule.exports = { fetchInfo, handleFlmBuildChange };', {
+    '\nmodule.exports = { fetchInfo, handleRuntimeChange };', {
     compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS },
   }).outputText, {
     module,
@@ -178,7 +185,7 @@ function configFlow(api, loadSystemInfo = async () => ({})) {
     backendRuntimeRecord: value => value && typeof value === 'object' ? value : null,
     setLoading: () => {},
     setError: error => { if (error) errors.push(error); },
-    setSavingFlmBuild: () => {},
+    setSavingRuntime: () => {},
     friendlyErrorMessage: error => error.message,
     toast: error => errors.push(error),
   });
@@ -186,6 +193,30 @@ function configFlow(api, loadSystemInfo = async () => ({})) {
 }
 
 async function runConfigFlowChecks() {
+  {
+    const postSave = deferred();
+    let changes;
+    const flow = configFlow({
+      setRuntimeConfig: async value => { changes = value; return {}; },
+      getRuntimeConfig: () => postSave.promise,
+    });
+    const saving = flow.handleRuntimeChange('strata', 'inkling');
+    await new Promise(resolve => setImmediate(resolve));
+    assert.deepEqual(JSON.parse(JSON.stringify(changes)), { strata_runtime: 'inkling' });
+    assert.equal(flow.config().strata.runtime, 'inkling');
+    assert.equal(flow.config().strata.args, '--chunk 512');
+    assert.equal(flow.config().flm.runtime, 'xrt', 'Strata does not alter FLM runtime selection');
+    postSave.resolve(flow.config());
+    await saving;
+  }
+  {
+    const flow = configFlow({
+      setRuntimeConfig: async () => { throw new Error('runtime save rejected'); },
+    });
+    await flow.handleRuntimeChange('strata', 'inkling');
+    assert.equal(flow.config().strata.runtime, 'qwen', 'a failed save preserves the selected runtime');
+    assert.deepEqual(flow.errors, ['runtime save rejected']);
+  }
   {
     const older = deferred();
     const newer = deferred();
@@ -210,7 +241,7 @@ async function runConfigFlowChecks() {
       setRuntimeConfig: () => save.promise,
     });
     const beforeSave = flow.fetchInfo(false);
-    const saving = flow.handleFlmBuildChange('hrx');
+    const saving = flow.handleRuntimeChange('flm', 'hrx');
     const duringSave = flow.fetchInfo(false);
     save.resolve({ updated: { flm: { runtime: 'hrx' } } });
     await new Promise(resolve => setImmediate(resolve));
@@ -229,7 +260,7 @@ async function runConfigFlowChecks() {
       setRuntimeConfig: async () => ({}),
       getRuntimeConfig: async () => ({ flm: { runtime: 'hrx' } }),
     }, async () => { throw new Error('system-info unavailable'); });
-    await flow.handleFlmBuildChange('hrx');
+    await flow.handleRuntimeChange('flm', 'hrx');
     assert.equal(flow.config().flm.runtime, 'hrx', 'refresh failure preserves the accepted selection');
     assert.deepEqual(flow.errors, ['system-info unavailable']);
   }

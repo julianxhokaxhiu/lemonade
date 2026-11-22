@@ -1,5 +1,6 @@
 #include "lemon/backends/backend_utils.h"
 #include "lemon/backends/install_staging.h"
+#include "lemon/backends/backend_ops.h"
 #include "lemon/error_types.h"
 #include "lemon/runtime_config.h"
 #include "lemon/system_info.h"
@@ -659,8 +660,7 @@ namespace lemon::backends {
             throw std::runtime_error("backend_versions.json is missing version for backend: " + backend_id);
         }
 
-        std::string version = recipe_config[resolved_backend].get<std::string>();
-        return version;
+        return ops_for(recipe)->expected_version(recipe_config, resolved_backend);
     }
 
     void BackendUtils::install_from_github(const BackendSpec& spec,
@@ -1011,11 +1011,16 @@ namespace lemon::backends {
 
             for (size_t i = 0; i < additional_assets.size(); ++i) {
                 const auto& asset = additional_assets[i];
+                const std::string asset_version =
+                    asset.version_override.empty() ? expected_version : asset.version_override;
+                if (!utils::is_safe_path_component(asset_version)) {
+                    throw std::runtime_error("Invalid backend asset version: " + asset_version);
+                }
                 if (!utils::is_safe_path_component(asset.directory)) {
                     throw std::runtime_error("Invalid backend asset directory: " + asset.directory);
                 }
                 const std::string name = resolve_asset_wildcard(
-                    repo, expected_version, asset.filename, spec);
+                    repo, asset_version, asset.filename, spec);
                 const std::string path = (fs::path(staging_dir).parent_path() /
                     (spec.recipe + "_" + backend + "_" + name)).string();
                 ZipGuard extra_guard{path};
@@ -1034,20 +1039,32 @@ namespace lemon::backends {
                 }
                 utils::DownloadOptions opts;
                 opts.expected_hash = lookup_expected_asset_hash(
-                    source, spec.recipe, backend, expected_version, repo, name);
+                    source, spec.recipe, backend, asset_version, repo, name);
                 opts.expected_hash = backend_source::require_pinned_hash(
-                    source, opts.expected_hash, repo + "@" + expected_version + "/" + name);
+                    source, opts.expected_hash, repo + "@" + asset_version + "/" + name);
                 if (opts.expected_hash.empty() && spec.asset_hash_fn) {
-                    opts.expected_hash = spec.asset_hash_fn(expected_version, name);
+                    opts.expected_hash = spec.asset_hash_fn(asset_version, name);
                 }
                 const auto result = utils::HttpClient::download_file(
-                    asset_url(name), path, report, {}, opts);
+                    backend_source::release_asset_url(source, endpoint, repo, asset_version, name),
+                    path, report, {}, opts);
                 if (!result.success) {
                     throw std::runtime_error("Failed to download " + name + ": " + result.error_message);
                 }
                 const std::string destination = (fs::path(staging_dir) / asset.directory).string();
-                if (!extract_archive(path, destination, spec.log_name()) ||
-                    !asset.is_complete(staging_dir)) {
+                if (!extract_archive(path, destination, spec.log_name())) {
+                    throw std::runtime_error("Incomplete backend asset: " + name);
+                }
+                if (!asset.version_override.empty()) {
+                    const auto marker_path = fs::path(destination) / ".lemonade-release";
+                    std::ofstream marker(marker_path);
+                    marker << asset_version;
+                    marker.flush();
+                    if (!marker.good()) {
+                        throw std::runtime_error("Failed to write asset version file: " + marker_path.string());
+                    }
+                }
+                if (!asset.is_complete(staging_dir)) {
                     throw std::runtime_error("Incomplete backend asset: " + name);
                 }
             }

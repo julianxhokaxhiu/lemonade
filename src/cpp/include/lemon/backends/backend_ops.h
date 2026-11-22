@@ -67,6 +67,16 @@ class BackendOps {
 public:
     virtual ~BackendOps() = default;
 
+    struct ConfigChangeEffects {
+        bool unload_models = false;
+        bool invalidate_models_cache = false;
+    };
+
+    virtual ConfigChangeEffects config_change_effects(const nlohmann::json& changes) const {
+        (void)changes;
+        return {};
+    }
+
     virtual std::string device_family(const std::string& family, const std::string& name) const {
         (void)name;
         return family;
@@ -160,6 +170,11 @@ public:
         return "";
     }
 
+    virtual bool model_visible(const ModelInfo& info) const {
+        (void)info;
+        return true;
+    }
+
     virtual std::optional<std::vector<std::string>> model_backends(const ModelInfo& info) const {
         (void)info;
         return std::nullopt;
@@ -212,6 +227,11 @@ public:
                                         const std::string& file_version) const {
         (void)backend;
         return file_version;
+    }
+
+    virtual std::string expected_version(const nlohmann::json& pins,
+                                         const std::string& backend) const {
+        return pins.at(backend).get<std::string>();
     }
 
     // Result of a backend-specific install check: whether the backend variant is

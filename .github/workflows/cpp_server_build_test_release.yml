@@ -570,6 +570,7 @@ jobs:
           cmake --preset default
           cmake --build --preset default --target cpp-ci-tests
           ctest --test-dir build --output-on-failure --no-tests=error -L "^cpp-ci$"
+          python3 -B test/test_strata_models.py
 
   build-lemonade-debian13:
     needs: full-ci-gate
@@ -896,6 +897,7 @@ jobs:
           set -euo pipefail
           cmake --build --preset default --target cpp-ci-tests
           ctest --test-dir build --output-on-failure --no-tests=error -L "^cpp-ci$"
+          python3 -B test/test_strata_models.py
       - name: Upload .pkg package
         # Two test jobs download this unconditionally; a unit-test failure above
         # must not turn into a confusing "artifact not found" downstream.

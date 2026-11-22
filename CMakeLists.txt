@@ -1217,7 +1217,7 @@ foreach(_backend_entry ${LEMON_BACKENDS})
     string(APPEND LEMON_FACTORY_INCLUDES
         "#include \"lemon/backends/${_backend_stem}/${_backend_stem}_server.h\"\n")
     string(APPEND LEMON_FACTORY_ENTRIES
-        "        { &lemon::backends::${_backend_stem}::descriptor, &lemon::backends::${_backend_stem}::create, lemon::backends::${_backend_stem}::spec(), lemon::backends::${_backend_stem}::ops() },\n")
+        "        { &lemon::backends::${_backend_stem}::descriptor, &lemon::backends::${_backend_stem}::create, &lemon::backends::${_backend_stem}::spec, lemon::backends::${_backend_stem}::ops() },\n")
     string(APPEND LEMON_CAPABILITY_ENTRIES
         "        { &lemon::backends::${_backend_stem}::descriptor, lemon::backends::${_backend_stem}::capabilities() },\n")
 endforeach()

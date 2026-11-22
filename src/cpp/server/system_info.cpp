@@ -917,7 +917,7 @@ static std::string get_expected_backend_version(const std::string& recipe, const
     if (!recipe_config.contains(resolved_backend) || !recipe_config[resolved_backend].is_string()) {
         return "";
     }
-    return recipe_config[resolved_backend].get<std::string>();
+    return backends::ops_for(recipe)->expected_version(recipe_config, resolved_backend);
 }
 
 // ============================================================================

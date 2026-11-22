@@ -173,12 +173,33 @@ static void test_swap_failure_preserves_working_binary(TestResult& r) {
 }
 #endif
 
+static void test_root_executable_precedes_nested_cli(TestResult& r) {
+    const fs::path root = make_temp_root("strata");
+    const fs::path install_dir = root / "strata";
+    write_file(install_dir / "control" / "bin" / "strata", "CLI");
+#ifdef _WIN32
+    const fs::path engine = install_dir / "strata.exe";
+#else
+    const fs::path engine = install_dir / "strata";
+#endif
+    write_file(engine, "ENGINE");
+    r.check(lemon::backends::find_executable_in_dir(install_dir.string(), "strata") == engine.string(),
+            "root native engine takes precedence over the nested Control CLI");
+
+    const fs::path destination = root / "installed";
+    r.check(commit_staged_install(install_dir.string(), destination.string(), "strata") ==
+                (destination / engine.filename()).string(),
+            "staged promotion returns the native engine rather than the Control CLI");
+    fs::remove_all(root);
+}
+
 int main() {
     TestResult r;
     printf("=== commit_staged_install atomicity tests ===\n");
     test_successful_swap(r);
     test_failed_install_preserves_working_binary(r);
     test_fresh_install(r);
+    test_root_executable_precedes_nested_cli(r);
 #ifndef _WIN32
     test_swap_failure_preserves_working_binary(r);
 #endif

@@ -1205,6 +1205,11 @@ void RuntimeConfig::validate_backend(const std::string& backend, const std::stri
             throw std::invalid_argument("'flm.runtime' must be 'xrt' or 'hrx'");
         }
     }
+    else if (backend == "strata" && key == "runtime") {
+        if (!value.is_string() || (value != "qwen" && value != "hy4" && value != "inkling")) {
+            throw std::invalid_argument("'strata.runtime' must be 'qwen', 'hy4' or 'inkling'");
+        }
+    }
     else if (key == "prefer_system") {
         if (!value.is_boolean()) {
             throw std::invalid_argument("'" + backend + "." + key + "' must be a boolean");

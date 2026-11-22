@@ -470,6 +470,10 @@ namespace {
 // FLM model-management behavior: max context window from the model's config.json.
 class FlmOps : public BackendOps {
 public:
+    ConfigChangeEffects config_change_effects(const json& changes) const override {
+        return {changes.contains("runtime"), false};
+    }
+
     void populate_metadata(ModelInfo& info, const BackendOpsContext&) const override {
         info.max_context_window = read_flm_max_context_window(info);
     }

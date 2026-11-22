@@ -51,7 +51,7 @@ const BackendOps* single_ops() {
 struct BackendRegistration {
     const BackendDescriptor* descriptor;
     BackendCreateFn create;
-    const BackendSpec* spec;  // install/download spec, or nullptr (e.g. cloud has none)
+    const BackendSpec* (*spec)();  // resolves the current install/download spec, or nullptr
     const BackendOps* ops;    // stateless model-management behavior (never null)
 };
 

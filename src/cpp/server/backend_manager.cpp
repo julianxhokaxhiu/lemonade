@@ -511,7 +511,7 @@ std::string BackendManager::get_version_from_config(const std::string& recipe, c
     if (!recipe_config.contains(resolved_backend) || !recipe_config[resolved_backend].is_string()) {
         throw std::runtime_error("backend_versions.json is missing version for: " + recipe + ":" + resolved_backend);
     }
-    return recipe_config[resolved_backend].get<std::string>();
+    return backends::ops_for(recipe)->expected_version(recipe_config, resolved_backend);
 }
 
 // ============================================================================
@@ -783,10 +783,7 @@ void BackendManager::install_backend(const std::string& recipe, const std::strin
             !backends::BackendUtils::find_external_backend_binary(recipe, resolved_backend).empty()) {
             return true;
         }
-        const auto pinned = get_version_from_config(recipe, resolved_backend);
-        const auto params = spec->install_params_fn(resolved_backend, pinned);
-        return spec->build_matches(
-            backends::BackendUtils::get_install_directory(recipe, resolved_backend), params.filename);
+        return backends::ops_for(recipe)->check_install(resolved_backend, true).installed;
     };
 
     if (auto* cfg = RuntimeConfig::global()) {

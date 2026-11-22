@@ -6,6 +6,7 @@
 #include <lemon/utils/aixlog.hpp>
 
 #include "lemon/backend_manager.h"
+#include "lemon/backends/backend_registry.h"
 #include "lemon/logging_config.h"
 #include "lemon/model_manager.h"
 #include "lemon/router.h"
@@ -79,17 +80,17 @@ void ConfigEffects::apply(const std::string& key, const json& value) {
             }
         }
     } else if (value.is_object()) {
-        // Nested backend section change (llamacpp / whispercpp / sdcpp / ryzenai / kokoro).
-        // Recipe defaults (e.g. default_backend) are derived from these settings, so
-        // drop the memoized recipes so the next /system-info recomputes them.
+        // Recipe defaults depend on backend configuration and must be recomputed.
         SystemInfoCache::invalidate_recipes();
-        if (key == "flm" && value.contains("runtime")) {
+        const std::string recipe = RuntimeConfig::config_section_to_recipe(key);
+        const auto effects = backends::ops_for(recipe)->config_change_effects(value);
+        if (effects.unload_models) {
             for (const auto& model : ctx_.router->get_all_loaded_models()) {
-                if (model.value("recipe", "") != "flm") continue;
+                if (model.value("recipe", "") != recipe) continue;
                 const std::string name = model.value("model_name", "");
                 if (name.empty()) continue;
                 LOG(INFO, "Server") << "Unloading " << name
-                                    << " after flm.runtime changed" << std::endl;
+                                    << " after " << key << " configuration changed" << std::endl;
                 try {
                     ctx_.router->unload_model(name);
                 } catch (const std::exception& e) {
@@ -98,6 +99,7 @@ void ConfigEffects::apply(const std::string& key, const json& value) {
                 }
             }
         }
+        if (effects.invalidate_models_cache) ctx_.model_manager->invalidate_models_cache();
         for (auto& [sub_key, sub_value] : value.items()) {
             if (sub_key.size() >= 4
                 && sub_key.compare(sub_key.size() - 4, 4, "_bin") == 0) {
