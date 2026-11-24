@@ -10,10 +10,8 @@ the generator instead. Prose outside the markers is preserved. -->
 | Recipe | Name | Selectable backend | Uses ctx_size | Backends |
 |--------|------|--------------------|---------------|----------|
 | `acestep` | ACE-Step | yes | no | cuda, rocm, vulkan |
-| `ds4` | DwarfStar4 | no | yes | rocm |
 | `flm` | FastFlowLM NPU | no | yes | npu |
 | `gufo` | Gufo | no | yes | rocm |
-| `halogen` | Halogen | no | yes | rocm |
 | `kokoro` | Kokoro | no | no | cpu, metal |
 | `llamacpp` | Llama.cpp GPU | yes | yes | cpu, cuda, halobox, metal, nathanw, rocm, system, vulkan |
 | `llamacpp-hrx` | HRX GPU | no | yes | hrx |
@@ -21,9 +19,9 @@ the generator instead. Prose outside the markers is preserved. -->
 | `moonshine` | Moonshine | no | no | cpu |
 | `onnxruntime` | ONNX Runtime | no | no | cpu |
 | `openmoss` | OpenMOSS TTS | yes | no | cuda, vulkan |
-| `rocmfpx` | ROCm FPX | no | yes | rocm |
 | `ryzenai-llm` | Ryzen AI LLM | no | yes | npu |
 | `sd-cpp` | StableDiffusion.cpp | yes | no | cpu, cuda, metal, rocm, vulkan |
+| `strata` | Strata | yes | yes | cuda, metal, rocm, sycl |
 | `thenoise` | TheNoise | yes | no | cuda, rocm |
 | `thinksound` | ThinkSound | yes | no | cuda, rocm, vulkan |
 | `trellis` | TRELLIS.2 | yes | no | cuda, cuda12, rocm, vulkan |
@@ -41,11 +39,9 @@ Each backend has a tier and a format; see [Backend Tiers and Formats](../api/lem
 | `acestep` | cuda | experimental | native | linux, windows | nvidia_gpu |
 | `acestep` | vulkan | experimental | native | linux, windows | amd_gpu; cpu (x86_64); nvidia_gpu |
 | `acestep` | rocm | experimental | native | linux, windows | amd_gpu (gfx103X, gfx110X, gfx1150, gfx1151, gfx1152, gfx120X) |
-| `ds4` | rocm | guest | container | linux | amd_gpu (gfx1151) |
 | `flm` | npu | core | native | linux, windows | amd_npu (XDNA2) |
 | `gufo` | rocm | guest | container | linux | amd_gpu (gfx1151) |
 | `gufo` | rocm | guest | native | windows | amd_gpu (gfx1151) |
-| `halogen` | rocm | guest | container | linux | amd_gpu (gfx1151) |
 | `kokoro` | metal | core | native | macos | metal |
 | `kokoro` | cpu | core | native | linux, windows | cpu (x86_64) |
 | `llamacpp` | system | core | native | linux | cpu (arm64, x86_64) |
@@ -66,13 +62,17 @@ Each backend has a tier and a format; see [Backend Tiers and Formats](../api/lem
 | `onnxruntime` | cpu | experimental | native | macos | cpu (arm64) |
 | `openmoss` | cuda | experimental | native | linux, windows | nvidia_gpu |
 | `openmoss` | vulkan | experimental | native | linux, windows | amd_gpu; cpu (x86_64); nvidia_gpu |
-| `rocmfpx` | rocm | guest | container | linux | amd_gpu (gfx1151) |
 | `ryzenai-llm` | npu | core | native | windows | amd_npu (XDNA2) |
 | `sd-cpp` | metal | core | native | macos | metal |
 | `sd-cpp` | cuda | core | native | linux, windows | nvidia_gpu (sm_100, sm_120, sm_121, sm_75, sm_80, sm_86, sm_89, sm_90) |
 | `sd-cpp` | vulkan | core | native | linux, windows | amd_gpu; cpu (x86_64); nvidia_gpu |
 | `sd-cpp` | rocm | core | native | linux, windows | amd_gpu (gfx103X, gfx110X, gfx1150, gfx1151, gfx1152, gfx120X) |
 | `sd-cpp` | cpu | core | native | linux, windows | cpu (x86_64) |
+| `strata` | cuda | experimental | python | linux, windows | nvidia_gpu (sm_120, sm_75, sm_86, sm_89) |
+| `strata` | rocm | experimental | python | linux, windows | amd_gpu (gfx1030, gfx1031, gfx1100, gfx1101, gfx1102, gfx1151, gfx1200, gfx1201) |
+| `strata` | sycl | experimental | python | linux | intel_gpu (arc) |
+| `strata` | cuda | experimental | python | linux | nvidia_gpu (sm_121) |
+| `strata` | metal | experimental | python | macos | metal |
 | `thenoise` | rocm | core | python | linux, windows | amd_gpu (gfx103X, gfx110X, gfx1150, gfx1151, gfx1152, gfx120X) |
 | `thenoise` | cuda | experimental | python | linux | nvidia_gpu |
 | `thinksound` | cuda | experimental | native | linux, windows | nvidia_gpu |
@@ -106,13 +106,6 @@ Each backend has a tier and a format; see [Backend Tiers and Formats](../api/lem
 |--------|----------|------|---------|-------------|
 | `acestep_device` | `--acestep-device` | DEVICES | "" | GPU to use: ROCm0, CUDA1, ... or a GPU's uuid or pci_bus_id from system-info; auto selects automatically |
 | `acestep_backend` | `--acestep` | BACKEND | "" | ACE-Step backend to use |
-
-#### `ds4` — DwarfStar4
-
-| Option | CLI flag | Type | Default | Description |
-|--------|----------|------|---------|-------------|
-| `ctx_size` | `--ctx-size` | SIZE | -1 | Context size for the model |
-| `ds4_args` | `--ds4-args` | ARGS | "" | Custom arguments to pass to ds4-server |
 
 #### `flm` — FastFlowLM NPU
 
@@ -171,13 +164,6 @@ Each backend has a tier and a format; see [Backend Tiers and Formats](../api/lem
 | `pcm_sample_rate` | — | SIZE | 0 | Sample rate of the PCM this model emits, reported as X-MOSS-Sample-Rate (0 omits the header) |
 | `pcm_channels` | — | SIZE | 0 | Channel count of the PCM this model emits, reported as X-MOSS-Channels (0 omits the header) |
 
-#### `rocmfpx` — ROCm FPX
-
-| Option | CLI flag | Type | Default | Description |
-|--------|----------|------|---------|-------------|
-| `ctx_size` | `--ctx-size` | SIZE | -1 | Context size for the model |
-| `rocmfpx_args` | `--rocmfpx-args` | ARGS | "" | Custom arguments to pass to the ROCm FPX llama-server |
-
 #### `sd-cpp` — StableDiffusion.cpp
 
 | Option | CLI flag | Type | Default | Description |
@@ -194,6 +180,15 @@ Each backend has a tier and a format; see [Backend Tiers and Formats](../api/lem
 | `video_frames` | — | SIZE | 33 | Number of video frames |
 | `fps` | — | SIZE | 16 | Video frames per second |
 | `soft_pixel_cap` | — | SIZE | 0 | Largest output area, in pixels, that images/edits infers from the first reference image when size is omitted (0 = server default) |
+
+#### `strata` — Strata
+
+| Option | CLI flag | Type | Default | Description |
+|--------|----------|------|---------|-------------|
+| `ctx_size` | `--ctx-size` | SIZE | -1 | Context size for the model |
+| `strata_backend` | `--strata` | BACKEND | "" | Strata backend to use |
+| `strata_parallel` | `--strata-parallel` | SIZE | 1 | Concurrent Strata slots (1-8); each slot allocates its own context |
+| `strata_args` | `--strata-args` | ARGS | "" | Additional Strata engine arguments; model, context and serving mode are managed by Lemonade |
 
 #### `thenoise` — TheNoise
 
@@ -283,6 +278,12 @@ Voice design is opt-in through the `voice_design_description` extension and is n
 ### llama.cpp (`llamacpp`)
 
 Lemonade launches `llama-server` with `--parallel 1` and leaves the upstream `--cache-ram` host prompt cache at its default. `LlamaCppServer` does not override `downsize()`: slot `erase` frees no device memory (the KV buffer is allocated once at model load) and discards the slot's KV state without going through the host-cache save path, so soft idle leaves the slot resident and a resumed conversation reuses its cached prefix.
+
+### Strata (`strata`)
+
+Experimental; maintained by Julian Xhokaxhiu. Runs supported Qwen models using shared weights and Strata's bundled Python preparation tools/server. Engine and Control follow `backend_versions.json`; models are registered in `server_models.json`. Flash MTP (~5.2 GB on first load, `--mtp off` to disable), KV streaming and slot telemetry use upstream support. Memory filtering uses model-compatible devices, with system RAM for integrated AMD GPUs and Apple Silicon and the device memory pool otherwise.
+
+To upgrade Strata, bump its release pins. Exact asset names and hashes come from that release's checksum and Control install manifests, cached in memory without GitHub API lookups. A complete pinned install can be reused on metadata fetch failure unless installation is forced.
 
 ### Backend auto-selection
 

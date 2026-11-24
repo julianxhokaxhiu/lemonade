@@ -1191,6 +1191,7 @@ jobs:
             runner: [Windows, X64, stx-halo, lemon-prod]
             suites: >-
               [{"name":"whisper","script":"server_whisper.py","extra_args":"--wrapped-server whispercpp","backends":"cpu npu rocm"},
+               {"name":"strata","script":"server_llm.py","extra_args":"--wrapped-server strata","backends":"rocm"},
                {"name":"thenoise","script":"server_thenoise.py","extra_args":"--wrapped-server thenoise","backends":"rocm"},
                {"name":"loom","script":"server_llm.py","extra_args":"--wrapped-server loom","backends":"hrx"}]
           - name: vulkan-stx-halo
@@ -1609,6 +1610,10 @@ jobs:
             install: "loom:hrx"
             script: server_llm.py
             extra_args: "--wrapped-server loom --backend hrx"
+          - name: strata
+            install: "strata:rocm"
+            script: server_llm.py
+            extra_args: "--wrapped-server strata --backend rocm"
     env:
       LEMONADE_CI_MODE: "True"
       HF_TOKEN: ${{ secrets.HUGGINGFACE_ACCESS_TOKEN }}
