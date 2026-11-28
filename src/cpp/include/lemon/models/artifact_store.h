@@ -137,8 +137,8 @@ class ModelArtifactStore {
     // Replace a model's registry size with what its checkpoints actually occupy.
     static void refresh_on_disk_size(ModelInfo& info);
 
-    // What the model's resolved checkpoints look like on disk.
-    std::vector<ModelFileInfo> list_files(const ModelInfo& info) const;
+    // Unique resolved paths, with explicit checkpoint roles taking precedence over shard expansion.
+    static std::vector<ModelFileInfo> list_files(const ModelInfo& info);
 
     // Remove what the sources say lemond wrote, per checkpoint. `all_models` is the
     // whole model map, which shared-repository scope cannot be answered without.

@@ -1,4 +1,5 @@
 #include "lemon/model_manager.h"
+#include "lemon/models/artifact_store.h"
 #include "lemon/utils/path_utils.h"
 #include "show_all_models.h"
 #include "support/server_wired_manager.h"
@@ -339,6 +340,45 @@ static void test_list_sharded_model_files(ModelManager& manager, const Fixture& 
               missing[1].exists && missing[2].exists);
 }
 
+static void test_shared_checkpoint_inventory(const Fixture& fx) {
+    const fs::path dir = fx.root / "shared-checkpoints";
+    const fs::path first = dir / "model-00001-of-00003.gguf";
+    const fs::path second = dir / "model-00002-of-00003.gguf";
+    const fs::path third = dir / "model-00003-of-00003.gguf";
+    const fs::path auxiliary = dir / "aux" / first.filename();
+    const std::vector<fs::path> paths = {first, second, third, auxiliary};
+    for (size_t i = 0; i < paths.size(); ++i) {
+        write_file(paths[i], kGguf);
+        fs::resize_file(paths[i], (i + 1) * (1u << 20));
+    }
+
+    ModelInfo info;
+    info.resolved_paths = {
+        {"main", path_to_utf8(first)},
+        {"main_alias", path_to_utf8(dir / "." / first.filename())},
+        {"mmproj", path_to_utf8(auxiliary)},
+        {"shard_2", path_to_utf8(second)},
+    };
+    auto store = lemon::models::ModelArtifactStore({{}, {}, {}});
+    const auto files = store.list_files(info);
+    check("overlapping shard checkpoints list each path once", files.size() == 4);
+    const std::vector<std::string> roles = {"main", "shard_2", "main", "mmproj"};
+    bool metadata_ok = files.size() == paths.size();
+    for (size_t i = 0; i < files.size() && i < paths.size(); ++i) {
+        metadata_ok = metadata_ok && path_from_utf8(files[i].path) == paths[i] &&
+                      files[i].role == roles[i] && files[i].exists &&
+                      files[i].size_bytes == (i + 1) * (1u << 20);
+    }
+    check("explicit shard roles and distinct same-named files are preserved", metadata_ok);
+    lemon::models::ModelArtifactStore::refresh_on_disk_size(info);
+    check("model size counts overlapping shard checkpoints once", info.size == 0.010);
+
+    info.resolved_paths = {{"main", path_to_utf8(dir)}, {"vae", path_to_utf8(dir / ".")}};
+    check("shared directory checkpoints have one inventory row", store.list_files(info).size() == 1);
+    lemon::models::ModelArtifactStore::refresh_on_disk_size(info);
+    check("model size counts a shared directory once", info.size == 0.010);
+}
+
 static void test_cleanup_orphaned_cache(ModelManager& manager, const Fixture& fx) {
     json dry = manager.cleanup_orphaned_cache(true);
     const auto& found = dry["orphaned_files"];
@@ -384,6 +424,7 @@ int main() {
         test_public_names_resolve(manager);
         test_list_model_files(manager, fx);
         test_list_sharded_model_files(manager, fx);
+        test_shared_checkpoint_inventory(fx);
         test_cleanup_orphaned_cache(manager, fx);
     }
 

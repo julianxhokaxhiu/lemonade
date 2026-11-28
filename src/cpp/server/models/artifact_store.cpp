@@ -444,25 +444,37 @@ std::uint64_t ModelArtifactStore::size_bytes(const fs::path& path) {
     return total;
 }
 
-std::vector<ModelFileInfo> ModelArtifactStore::list_files(const ModelInfo& info) const {
+std::vector<ModelFileInfo> ModelArtifactStore::list_files(const ModelInfo& info) {
     std::vector<ModelFileInfo> files;
     files.reserve(info.resolved_paths.size());
 
+    const auto normalized_path = [](const std::string& value) {
+        fs::path path = utils::path_from_utf8(value).lexically_normal();
+        if (!path.has_filename() && path != path.root_path()) path = path.parent_path();
+        return path;
+    };
+    std::map<fs::path, std::string> explicit_roles;
+    for (const auto& [role, path] : info.resolved_paths) {
+        if (!path.empty()) explicit_roles.emplace(normalized_path(path), role);
+    }
+    std::set<fs::path> listed_paths;
     for (const auto& [role, resolved_path] : info.resolved_paths) {
         if (resolved_path.empty()) {
             continue;
         }
 
-        auto checkpoint_files = gguf_files(resolved_path);
+        auto checkpoint_files = gguf_files(utils::path_to_utf8(normalized_path(resolved_path)));
         std::sort(checkpoint_files.begin(), checkpoint_files.end());
         for (const auto& file_path : checkpoint_files) {
-            fs::path path = utils::path_from_utf8(file_path);
+            const fs::path path = normalized_path(file_path);
+            if (!listed_paths.insert(path).second) continue;
             const bool path_exists = safe_exists(path);
+            const auto explicit_role = explicit_roles.find(path);
 
             ModelFileInfo file;
             file.name = utils::path_to_utf8(path.filename());
-            file.path = file_path;
-            file.role = role;
+            file.path = utils::path_to_utf8(path);
+            file.role = explicit_role != explicit_roles.end() ? explicit_role->second : role;
             file.exists = path_exists;
             file.size_bytes = path_exists ? size_bytes(path) : 0;
             files.push_back(std::move(file));
@@ -1423,17 +1435,11 @@ void ModelArtifactStore::resolve_all(ModelInfo& info) const {
 }
 
 // Replace the static registry size with the aggregate on-disk size once the
-// files exist, so directory-checkpoint models (whose repos can carry more than
-// the registry estimate) report what was actually downloaded. A sharded GGUF
-// resolves to a single shard, which for unsloth-style layouts is a small stub,
-// so the whole family is summed instead.
+// files exist. The inventory expands shard families and counts shared paths once.
 void ModelArtifactStore::refresh_on_disk_size(ModelInfo& info) {
     uintmax_t total_size = 0;
-    for (auto& [type, path] : info.resolved_paths) {
-        (void)type;
-        fs::path resolved = utils::path_from_utf8(path);
-        uintmax_t shard_total = sharded_gguf_size_bytes(resolved);
-        total_size += (shard_total > 0) ? shard_total : models::ModelArtifactStore::size_bytes(resolved);
+    for (const auto& file : list_files(info)) {
+        total_size += file.size_bytes;
     }
     if (total_size == 0) {
         return;
